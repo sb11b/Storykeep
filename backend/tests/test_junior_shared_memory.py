@@ -84,6 +84,7 @@ class JuniorSharedRouteTests(unittest.TestCase):
             "/api/v1/junior/agent-context?project=storykeep",
             "/api/v1/junior/agents",
             "/api/v1/junior/sessions",
+            f"/api/v1/junior/threads/{uuid.uuid4()}",
         ):
             response = client.get(path)
             self.assertEqual(response.status_code, 401, path)
@@ -110,6 +111,7 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("GET", "/api/v1/junior/agent-context?project=storykeep"),
             ("GET", "/api/v1/junior/agents"),
             ("GET", "/api/v1/junior/sessions"),
+            ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}"),
             ("POST", "/api/v1/junior/messages"),
             ("POST", "/api/v1/junior/agents"),
             ("POST", "/api/v1/junior/memories"),
@@ -238,6 +240,13 @@ class JuniorSharedRouteTests(unittest.TestCase):
         self.assertEqual(resumed.headers.get("x-next-cursor"), str(user_msg.id))
         self.assertEqual(history.call_args.kwargs["limit"], 1)
         self.assertEqual(history.call_args.kwargs["cursor"], str(user_msg.id))
+
+        with patch("app.routers.junior_shared.store.thread_owned", return_value=thread) as owned:
+            one = TestClient(app).get(f"/api/v1/junior/threads/{thread_id}")
+        self.assertEqual(one.status_code, 200)
+        self.assertEqual(one.json()["id"], str(thread_id))
+        self.assertEqual(one.json()["title"], "New chat")
+        self.assertEqual(str(owned.call_args.args[2]), str(thread_id))
 
     def test_search_and_memories(self):
         now = datetime.now(timezone.utc)

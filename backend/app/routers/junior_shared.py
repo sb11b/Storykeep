@@ -94,6 +94,15 @@ def create_thread(
     return JuniorSharedThreadOut.model_validate(row)
 
 
+@router.get("/threads/{thread_id}", response_model=JuniorSharedThreadOut)
+def get_thread(
+    thread_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedThreadOut:
+    return JuniorSharedThreadOut.model_validate(store.thread_owned(db, user, thread_id))
+
+
 @router.get("/threads/{thread_id}/messages", response_model=list[JuniorSharedMessageOut])
 def list_messages(
     thread_id: UUID,

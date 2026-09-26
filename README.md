@@ -126,6 +126,7 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | --- | --- | --- |
 | `GET` | `/api/v1/junior/threads` | List recent threads (`limit`, `cursor` or `before_id`) |
 | `POST` | `/api/v1/junior/threads` | Start a thread (`title`, `venue`). Optional `text` is the first turn. |
+| `GET` | `/api/v1/junior/threads/{id}` | One thread the signed-in user owns |
 | `GET` | `/api/v1/junior/threads/{id}/messages` | Thread history (`limit`, `cursor` or `before_id`) |
 | `POST` | `/api/v1/junior/threads/{id}/messages` | Send a turn (`text` or `content`, `venue`, optional `meta`) |
 | `GET` | `/api/v1/junior/messages` | Recent messages for the signed-in user (same page params; optional `thread_id`) |

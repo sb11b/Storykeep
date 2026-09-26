@@ -11,6 +11,7 @@ login the same client replays queued posts in order with the same auth.
 Failed project upserts and agent-launch stubs replay on POST /projects and
 POST /agents. Failed memory writes replay on POST /memories. GET /agents
 is paginated like the other lists. Continue history is paginated.
+Failed thread creates replay on POST /threads. GET /threads/{id} loads one thread.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-sessions-page-v1"
+HEALTH_STAMP = "junior-client-thread-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -276,6 +277,8 @@ class SharedMemoryClient:
             return "memory"
         if path.rstrip("/").endswith("/sessions"):
             return "session"
+        if path.rstrip("/").endswith("/threads"):
+            return "thread"
         return "message"
 
     def _replay_one(self, post: dict[str, Any], text: str) -> Any:
@@ -309,6 +312,8 @@ class SharedMemoryClient:
             )
         if kind == "session":
             return self.touch_session(device_label=post.get("device_label"))
+        if kind == "thread":
+            return self.open_thread(str(post.get("title") or ""), text=text or None)
         return self.post_turn(text, thread_id=thread_id)
 
     def _remember_write_failure(
@@ -331,6 +336,8 @@ class SharedMemoryClient:
             kind = "memory"
         elif path.rstrip("/").endswith("/sessions"):
             kind = "session"
+        elif path.rstrip("/").endswith("/threads"):
+            kind = "thread"
         else:
             kind = "message"
         queued = {
@@ -460,7 +467,7 @@ class SharedMemoryClient:
         return self._write(
             "post",
             f"{API_PREFIX}/threads",
-            action="save this message",
+            action="open this thread",
             body=body,
             json=body,
         )
@@ -500,6 +507,12 @@ class SharedMemoryClient:
             f"{API_PREFIX}/threads",
             action="load threads",
             **({"params": params} if params else {}),
+        )
+
+    def get_thread(self, thread_id: UUID | str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/threads/{thread_id}",
+            action="load this thread",
         )
 
     def get_messages(
