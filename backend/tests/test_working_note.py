@@ -50,6 +50,19 @@ class WorkingNoteTests(unittest.TestCase):
     def test_heading_from_section_number(self):
         self.assertEqual(heading_from_instruction("tighten section 2", NOTE), "Section 2")
 
+    def test_auto_apply_appends_and_keeps_the_original(self):
+        merged = merge_working_note(NOTE, "New finding from the lab.", mode="auto")
+        self.assertIn("Keep this opening intact", merged)
+        self.assertIn("Closing facts stay here", merged)
+        self.assertIn("New finding from the lab.", merged)
+        self.assertLess(merged.find("Keep this opening intact"), merged.find("New finding from the lab."))
+
+    def test_auto_apply_full_rewrite_stays_one_copy(self):
+        rewritten = NOTE.replace("too wordy and rambling and needs a tighter rewrite", "Short and clear.")
+        merged = merge_working_note(NOTE, rewritten, mode="auto")
+        self.assertEqual(merged.count("Keep this opening intact"), 1)
+        self.assertIn("Short and clear", merged)
+
     def test_apply_heading_keeps_other_sections(self):
         reply = "```markdown\n## Section 2\n\nShort and clear.\n```"
         merged = merge_working_note(NOTE, reply, mode="heading", heading="Section 2")

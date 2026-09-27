@@ -345,6 +345,7 @@ class OverlayAdditionIn(BaseModel):
     is_correction: bool = False
     parent_id: uuid.UUID | None = None
     confirm_short: bool = False
+    append: bool = False
 
 
 class ApplyJuniorReplyIn(BaseModel):

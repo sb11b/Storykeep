@@ -13,7 +13,12 @@ from app.schemas import (
     OverlayHighlightOut,
     TagOut,
 )
-from app.services.destination import DEFAULT_DESTINATION, effective_destination
+from app.services.destination import (
+    DEFAULT_DESTINATION,
+    effective_destination,
+    is_composed_guid,
+    is_imported_vault_note,
+)
 from app.services.extractor import (
     _feed_body_valid,
     _html_extract_candidate_valid,
@@ -116,7 +121,7 @@ def _display_body(article: Article) -> tuple[str | None, str | None]:
 
 
 def article_out(article: Article, filed_notes: list[Article] | None = None) -> ArticleOut:
-    if getattr(article, "offline_view", None) == "pdf":
+    if is_composed_guid(article.guid) or is_imported_vault_note(article) or getattr(article, "offline_view", None) == "pdf":
         content_html = article.content_html
         content_text = article.content_text
     else:

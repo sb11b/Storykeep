@@ -46,6 +46,20 @@ def extract_apply_markdown(reply: str) -> str:
     return text
 
 
+def append_note_markdown(existing: str, addition: str) -> str:
+    """Keep the stored note and add new text. A reply that already contains the note stays a single copy."""
+    base = (existing or "").strip()
+    extra = (addition or "").strip()
+    if not base:
+        return extra
+    if not extra or extra in base:
+        return base
+    lines = [line.strip() for line in base.splitlines() if line.strip()]
+    if len(lines) >= 2 and lines[0] in extra and lines[-1] in extra:
+        return extra
+    return f"{base}\n\n{extra}"
+
+
 def _replace_span(source: str, start: int, end: int, replacement: str) -> str:
     chunk = (replacement or "").strip("\n")
     prefix = source[: max(0, start)]
@@ -89,7 +103,7 @@ def merge_working_note(
     if slice.has_more or slice.offset:
         end = slice.next_offset if slice.next_offset is not None else slice.offset + slice.chars
         return _replace_span(body, slice.offset, end, incoming)
-    return incoming
+    return append_note_markdown(body, incoming)
 
 
 def apply_junior_reply(

@@ -2045,14 +2045,27 @@ export function GrokPane({
       const markdown = extra
         ? `${noteMarkdown(body, articleTitle, sourceRef || null, label)}\n\n${extra}`
         : noteMarkdown(body, articleTitle, sourceRef || null, label);
-      const article = await api.composeVaultNote(
-        titleFromReply(body, label),
-        markdown,
-        ["grok"],
-        dest,
-        payload.isCorrection,
-        folderId,
-      );
+      const existingId = pane.workingNoteId || pane.savedNoteId;
+      const existing = existingId ? await api.article(existingId) : null;
+      const article = existing
+        ? await api.updateComposedNote(
+            existing.id,
+            existing.title || titleFromReply(body, label),
+            markdown,
+            dest,
+            payload.isCorrection,
+            folderId,
+            false,
+            true,
+          )
+        : await api.composeVaultNote(
+            titleFromReply(body, label),
+            markdown,
+            ["grok"],
+            dest,
+            payload.isCorrection,
+            folderId,
+          );
       const filedDest = (article.destination as FilingDestination) || dest;
       const filedFolder = article.folder_id ?? folderId;
       saveLastFiling(filedDest, filedFolder);

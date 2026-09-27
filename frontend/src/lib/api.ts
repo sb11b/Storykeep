@@ -299,6 +299,7 @@ export const api = {
     isCorrection?: boolean,
     folderId?: string | null,
     confirmShort?: boolean,
+    append?: boolean,
   ) =>
     request<Article>(`/api/v1/articles/${articleId}/storykeep-note`, {
       method: "PATCH",
@@ -309,6 +310,7 @@ export const api = {
         folder_id: folderId ?? null,
         is_correction: Boolean(isCorrection),
         confirm_short: Boolean(confirmShort),
+        append: Boolean(append),
       }),
     }),
   listNoteRevisions: (articleId: string) =>

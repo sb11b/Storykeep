@@ -138,12 +138,18 @@ def edit_composed_note(
     article = _owned_article(db, user, article_id)
     try:
         dest = payload.destination or getattr(article, "destination", None) or "additions"
+        markdown = payload.markdown
+        if payload.append:
+            from app.services.note_revisions import stored_note_markdown
+            from app.services.working_note import append_note_markdown
+
+            markdown = append_note_markdown(stored_note_markdown(article, db, user), payload.markdown)
         update_composed_note(
             db,
             user,
             article,
             payload.title,
-            payload.markdown,
+            markdown,
             payload.is_correction,
             destination=dest,
             folder_id=payload.folder_id,
