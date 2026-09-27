@@ -62,6 +62,15 @@ class CursorAgentToolTests(unittest.TestCase):
         )
         self.assertEqual(cursor_agent_tool.extract_branch(msg), "main")
 
+    def test_extract_branch_ignores_git_pack_line(self):
+        msg = (
+            "go ahead and start next step\n"
+            "pack-reused 0 (from 0)\n"
+            "From https://github.com/sb11b/Storykeep-\n"
+            "Branch from current GitHub main"
+        )
+        self.assertEqual(cursor_agent_tool.extract_branch(msg), "main")
+
     def test_wants_start_ignores_negated_phrase(self):
         msg = "Junior, this already happened. Do not start a Cursor agent for it."
         self.assertFalse(cursor_agent_tool.wants_start(msg))

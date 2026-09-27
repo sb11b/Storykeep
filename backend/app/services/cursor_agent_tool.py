@@ -112,6 +112,24 @@ _BRANCH_SKIP = frozenset(
         "existing",
         "memory",
         "mobile",
+        "from",
+        "on",
+        "current",
+        "https",
+        "http",
+        "git",
+        "true",
+        "null",
+        "done",
+        "objects",
+        "branch",
+        "named",
+        "called",
+        "checkout",
+        "pull",
+        "push",
+        "merge",
+        "fetch",
     },
 )
 _NEGATED_START_RE = re.compile(
@@ -589,9 +607,9 @@ def _valid_branch_ref(ref: str) -> bool:
     if not cleaned:
         return False
     lowered = cleaned.lower()
-    if lowered in _BRANCH_SKIP:
+    if lowered in _BRANCH_SKIP or cleaned.isdigit():
         return False
-    if len(cleaned) == 1 and not cleaned.isdigit():
+    if len(cleaned) == 1:
         return False
     return True
 

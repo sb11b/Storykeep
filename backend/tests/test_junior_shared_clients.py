@@ -108,7 +108,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_is_memory_get_v1(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-memory-get-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-branch-not-zero-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
