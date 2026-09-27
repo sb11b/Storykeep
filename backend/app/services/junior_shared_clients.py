@@ -13,6 +13,7 @@ POST /agents. Failed memory writes replay on POST /memories. GET /agents
 is paginated like the other lists. Continue history is paginated.
 Failed thread creates replay on POST /threads. GET /threads/{id} loads one thread.
 Failed thread updates replay on POST /threads/{id}. GET /memories/{id} loads one memory.
+Failed project updates replay on POST /projects/{slug}. GET /agents/{id} loads one agent run.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-merge-abort-v1"
+HEALTH_STAMP = "junior-client-agent-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -84,6 +85,13 @@ def _is_thread_update_path(path: str) -> bool:
     if cleaned.endswith("/threads"):
         return False
     return "/threads/" in cleaned and "/messages" not in cleaned and "/continue" not in cleaned
+
+
+def _is_project_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    if cleaned.endswith("/projects"):
+        return False
+    return "/projects/" in cleaned
 
 
 def next_page_cursor(response: Any) -> str | None:
@@ -281,6 +289,8 @@ class SharedMemoryClient:
             return "agent"
         if path.rstrip("/").endswith("/projects"):
             return "project"
+        if _is_project_update_path(path):
+            return "project_update"
         if path.rstrip("/").endswith("/memories"):
             return "memory"
         if path.rstrip("/").endswith("/sessions"):
@@ -330,6 +340,16 @@ class SharedMemoryClient:
                 title=post.get("title"),
                 status=post.get("status"),
             )
+        if kind == "project_update":
+            return self.update_project(
+                str(post.get("slug") or self.project_slug),
+                display_name=str(post.get("display_name") or post.get("title") or self.project_slug),
+                kind=post.get("project_kind") or post.get("kind_value"),
+                repo_url=post.get("repo_url"),
+                default_branch=post.get("default_branch"),
+                notes=post.get("notes"),
+                meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+            )
         return self.post_turn(text, thread_id=thread_id)
 
     def _remember_write_failure(
@@ -348,6 +368,8 @@ class SharedMemoryClient:
             kind = "agent"
         elif path.rstrip("/").endswith("/projects"):
             kind = "project"
+        elif _is_project_update_path(path):
+            kind = "project_update"
         elif path.rstrip("/").endswith("/memories"):
             kind = "memory"
         elif path.rstrip("/").endswith("/sessions"):
@@ -696,6 +718,46 @@ class SharedMemoryClient:
             action="save this project",
             body=body,
             json=body,
+        )
+
+    def update_project(
+        self,
+        slug: str | None = None,
+        *,
+        display_name: str | None = None,
+        kind: str | None = None,
+        repo_url: str | None = None,
+        default_branch: str | None = None,
+        notes: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        target = slug or self.project_slug
+        body: dict[str, Any] = {
+            "slug": target,
+            "display_name": display_name or target,
+        }
+        if kind:
+            body["kind"] = kind
+        if repo_url is not None:
+            body["repo_url"] = repo_url
+        if default_branch is not None:
+            body["default_branch"] = default_branch
+        if notes is not None:
+            body["notes"] = notes
+        if meta is not None:
+            body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{target}",
+            action="update this project",
+            body=body,
+            json=body,
+        )
+
+    def get_agent_run(self, run_id: UUID | str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/agents/{run_id}",
+            action="load this agent run",
         )
 
     def upsert_memory(

@@ -853,6 +853,36 @@ def get_project(db: Session, user: User, slug: str) -> JuniorProject:
     return row
 
 
+def update_project(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    display_name: str | None = None,
+    kind: str | None = None,
+    repo_url: str | None = None,
+    default_branch: str | None = None,
+    notes: str | None = None,
+    meta: dict[str, Any] | None = None,
+) -> JuniorProject:
+    row = get_project(db, user, slug)
+    if display_name is not None:
+        row.display_name = _clean_text(display_name, max_len=120)
+    if kind is not None:
+        row.kind = normalize_kind_project(kind)
+    if repo_url is not None:
+        row.repo_url = _clean_text(repo_url, max_len=400, required=False) or None
+    if default_branch is not None:
+        row.default_branch = _clean_text(default_branch, max_len=80, required=False) or "main"
+    if notes is not None:
+        row.notes = _clean_text(notes, max_len=4000, required=False) or None
+    if meta is not None:
+        row.meta = meta if isinstance(meta, dict) else {}
+    row.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    return row
+
+
 def upsert_project(
     db: Session,
     user: User,
@@ -951,6 +981,13 @@ def build_agent_context(
         "search_hits": hits,
         "launch_hint": launch_hint(project),
     }
+
+
+def agent_run_owned(db: Session, user: User, run_id: UUID) -> JuniorAgentRun:
+    row = db.get(JuniorAgentRun, run_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return row
 
 
 def list_agent_runs(db: Session, user: User) -> list[JuniorAgentRun]:

@@ -375,6 +375,30 @@ def get_project(
     return JuniorProjectOut.model_validate(store.get_project(db, user, slug))
 
 
+@router.post("/projects/{slug}", response_model=JuniorProjectOut)
+def update_project(
+    slug: str,
+    payload: JuniorProjectIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorProjectOut:
+    fields = payload.model_fields_set
+    row = store.update_project(
+        db,
+        user,
+        slug,
+        display_name=payload.display_name if "display_name" in fields else None,
+        kind=payload.kind if "kind" in fields else None,
+        repo_url=payload.repo_url if "repo_url" in fields else None,
+        default_branch=payload.default_branch if "default_branch" in fields else None,
+        notes=payload.notes if "notes" in fields else None,
+        meta=payload.meta if "meta" in fields else None,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorProjectOut.model_validate(row)
+
+
 @router.post("/projects", response_model=JuniorProjectOut)
 def upsert_project(
     payload: JuniorProjectIn,
@@ -412,6 +436,15 @@ def list_agent_runs(
     )
     _page_headers(response, next_cursor)
     return [JuniorAgentRunOut.model_validate(row) for row in rows]
+
+
+@router.get("/agents/{run_id}", response_model=JuniorAgentRunOut)
+def get_agent_run(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentRunOut:
+    return JuniorAgentRunOut.model_validate(store.agent_run_owned(db, user, run_id))
 
 
 @router.get("/agent-context", response_model=JuniorAgentContextOut)
