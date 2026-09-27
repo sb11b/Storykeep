@@ -268,10 +268,11 @@ _NUM_WORDS = {
     "twelve": 12,
     "thirteen": 13,
     "fourteen": 14,
+    "fifteen": 15,
 }
 _SEQ_MENTION_RE = re.compile(
     r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*"
-    r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)\b"
+    r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen)\b"
     r"|\b(?:sequenced\s+)?#\s*(\d+)\b",
     re.I,
 )
@@ -280,9 +281,33 @@ _NEXT_STEP_RE = re.compile(
     r"|\bgo ahead and (?:send|start)\b"
     r"|\bmove on to the (?:next|nest) step\b"
     r"|\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*"
-    r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)\b",
+    r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen)\b",
     re.I,
 )
+
+SEQ_15_TASK = """Sequenced #15 — next after junior-client-session-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, or #14).
+
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, and #14 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+
+Already done on main:
+- Phone and Windows clients POST /memories/{id}; failed updates replay on that route
+- GET /sessions/{id} loads one owner session
+- POST /threads, /threads/{id}, /sessions, /memories, /projects, /agents, and continue history already page and replay
+- require_user; demo 403; no new public routes
+- Health stamp junior-client-session-get-v1
+
+Your job (#15):
+1. Both clients POST /sessions/{id} to update an existing session. Failed writes stay on the FIFO and replay on that same route (not POST /sessions). Same auth rule. No silent drop.
+2. Add GET /messages/{id} for one message. Same require_user rules. Still no public routes.
+3. Both clients call GET /messages/{id} (same auth).
+4. Keep SQL idempotent; no DROP TABLE. No new public routes.
+5. Extend smoke tests for session-update replay, single-message GET, and 403. Keep existing tests green.
+6. Health stamp: junior-client-message-get-v1
+7. Commit on a cursor/* branch and push that branch only.
+
+Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
+"""
+
 
 SEQ_14_TASK = """Sequenced #14 — next after junior-client-agent-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, or #13).
 
@@ -583,7 +608,7 @@ def _later_sequence_task(number: int, message: str) -> str:
     return (
         f"Sequenced #{number} on GitHub main of sb11b/Storykeep- (StoryKeep). "
         "Steve asked to start this sequence. Do not refuse. Do not ask him to define it. "
-        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, or #11. "
+        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, or #14. "
         "Do not merge steve-bitsko Cursor PR #2. Do not change the owner email. "
         "Do not git-push to main. Do not re-run SQL. Do not open a pull request. "
         "Commit on a cursor/* branch and push that branch only.\n\n"
@@ -616,14 +641,16 @@ def next_step_task(message: str) -> str | None:
         return SEQ_13_TASK
     if number == 14:
         return SEQ_14_TASK
-    if number is not None and number > 14:
+    if number == 15:
+        return SEQ_15_TASK
+    if number is not None and number > 15:
         return _later_sequence_task(number, text)
     if number == 2:
         return None
     for match in _NEXT_STEP_RE.finditer(text):
         if _negated_at(text, match.start()):
             continue
-        return _later_sequence_task(15, text)
+        return _later_sequence_task(16, text)
     return None
 
 

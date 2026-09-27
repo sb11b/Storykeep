@@ -155,6 +155,35 @@ def session_owned(db: Session, user: User, session_id: UUID) -> JuniorSession:
     return row
 
 
+def message_owned(db: Session, user: User, message_id: UUID) -> JuniorThreadMessage:
+    row = db.get(JuniorThreadMessage, message_id)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    thread = db.get(JuniorThread, row.thread_id)
+    if thread is None or thread.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    return row
+
+
+def update_session(
+    db: Session,
+    user: User,
+    session_id: UUID,
+    *,
+    venue: str | None = None,
+    device_label: str | None = None,
+    set_device_label: bool = False,
+) -> JuniorSession:
+    row = session_owned(db, user, session_id)
+    if venue is not None:
+        row.venue = normalize_venue(venue)
+    if set_device_label:
+        row.device_label = _clean_text(device_label, max_len=120, required=False) or None
+    row.last_seen_at = datetime.now(timezone.utc)
+    db.flush()
+    return row
+
+
 def update_thread(
     db: Session,
     user: User,

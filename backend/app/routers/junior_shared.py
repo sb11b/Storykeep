@@ -162,6 +162,15 @@ def post_message(
     return _turn_out(thread.id, user_row, junior_row, reply_status)
 
 
+@router.get("/messages/{message_id}", response_model=JuniorSharedMessageOut)
+def get_message(
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    return JuniorSharedMessageOut.model_validate(store.message_owned(db, user, message_id))
+
+
 @router.get("/messages", response_model=list[JuniorSharedMessageOut])
 def list_recent_messages(
     response: Response,
@@ -356,6 +365,28 @@ def get_session(
     user: User = Depends(require_user),
 ) -> JuniorSessionOut:
     return JuniorSessionOut.model_validate(store.session_owned(db, user, session_id))
+
+
+@router.post("/sessions/{session_id}", response_model=JuniorSessionOut)
+def update_session(
+    session_id: UUID,
+    payload: JuniorSessionIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSessionOut:
+    incoming = payload or JuniorSessionIn()
+    fields = incoming.model_fields_set
+    row = store.update_session(
+        db,
+        user,
+        session_id,
+        venue=incoming.venue if "venue" in fields else None,
+        device_label=incoming.device_label if "device_label" in fields else None,
+        set_device_label="device_label" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSessionOut.model_validate(row)
 
 
 @router.post("/sessions", response_model=JuniorSessionOut)

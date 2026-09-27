@@ -88,6 +88,7 @@ class JuniorSharedRouteTests(unittest.TestCase):
             f"/api/v1/junior/memories/{uuid.uuid4()}",
             f"/api/v1/junior/agents/{uuid.uuid4()}",
             f"/api/v1/junior/sessions/{uuid.uuid4()}",
+            f"/api/v1/junior/messages/{uuid.uuid4()}",
         ):
             response = client.get(path)
             self.assertEqual(response.status_code, 401, path)
@@ -119,6 +120,13 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ).status_code,
             401,
         )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/sessions/{uuid.uuid4()}",
+                json={"device_label": "junior-mobile-2"},
+            ).status_code,
+            401,
+        )
 
     def test_demo_gets_403(self):
         app = _app(SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True))
@@ -136,7 +144,9 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("GET", f"/api/v1/junior/memories/{uuid.uuid4()}"),
             ("GET", f"/api/v1/junior/agents/{uuid.uuid4()}"),
             ("GET", f"/api/v1/junior/sessions/{uuid.uuid4()}"),
+            ("GET", f"/api/v1/junior/messages/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/sessions/{uuid.uuid4()}"),
             ("POST", "/api/v1/junior/messages"),
             ("POST", "/api/v1/junior/agents"),
             ("POST", "/api/v1/junior/memories"),
@@ -284,6 +294,12 @@ class JuniorSharedRouteTests(unittest.TestCase):
             created_at=now,
             updated_at=now,
         )
+        with patch("app.routers.junior_shared.store.message_owned", return_value=user_msg) as one_msg:
+            loaded = TestClient(app).get(f"/api/v1/junior/messages/{user_msg.id}")
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(loaded.json()["content"], "Remember the trailer quote")
+        self.assertEqual(str(one_msg.call_args.args[2]), str(user_msg.id))
+
         with patch("app.routers.junior_shared.store.update_thread", return_value=archived) as updated:
             closed = TestClient(app).post(
                 f"/api/v1/junior/threads/{thread_id}",
@@ -391,6 +407,18 @@ class JuniorSharedServiceTests(unittest.TestCase):
         db.get.return_value = SimpleNamespace(id=uuid.uuid4(), user_id=other)
         with self.assertRaises(HTTPException) as caught:
             store.agent_run_owned(db, owner, uuid.uuid4())
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_message_owned_is_404_for_other_user(self):
+        owner = _owner()
+        other = uuid.uuid4()
+        db = MagicMock()
+        db.get.side_effect = [
+            SimpleNamespace(id=uuid.uuid4(), thread_id=uuid.uuid4()),
+            SimpleNamespace(id=uuid.uuid4(), user_id=other),
+        ]
+        with self.assertRaises(HTTPException) as caught:
+            store.message_owned(db, owner, uuid.uuid4())
         self.assertEqual(caught.exception.status_code, 404)
 
     def test_session_owned_is_404_for_other_user(self):
@@ -811,6 +839,23 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertEqual(one.status_code, 200)
         self.assertEqual(one.json()["device_label"], "junior-mobile")
         self.assertEqual(str(owned.call_args.args[2]), str(row.id))
+
+        renamed = SimpleNamespace(
+            id=row.id,
+            venue="phone",
+            device_label="junior-mobile-2",
+            last_seen_at=now,
+            created_at=now,
+        )
+        with patch("app.routers.junior_shared.store.update_session", return_value=renamed) as updated:
+            patched = TestClient(app).post(
+                f"/api/v1/junior/sessions/{row.id}",
+                json={"device_label": "junior-mobile-2"},
+            )
+        self.assertEqual(patched.status_code, 200)
+        self.assertEqual(patched.json()["device_label"], "junior-mobile-2")
+        self.assertEqual(str(updated.call_args.args[2]), str(row.id))
+        self.assertEqual(updated.call_args.kwargs["device_label"], "junior-mobile-2")
 
     def test_seed_writes_projects_and_decisions(self):
         owner = _owner()

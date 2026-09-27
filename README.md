@@ -131,6 +131,7 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `GET` | `/api/v1/junior/threads/{id}/messages` | Thread history (`limit`, `cursor` or `before_id`) |
 | `POST` | `/api/v1/junior/threads/{id}/messages` | Send a turn (`text` or `content`, `venue`, optional `meta`) |
 | `GET` | `/api/v1/junior/messages` | Recent messages for the signed-in user (same page params; optional `thread_id`) |
+| `GET` | `/api/v1/junior/messages/{id}` | One message the signed-in user owns |
 | `POST` | `/api/v1/junior/messages` | Same turn; omit `thread_id` to use last `open` thread (or create one) |
 | `POST` | `/api/v1/junior/threads/{id}/continue` | Resume a thread; with `text` this is another turn (`limit`, `cursor` or `before_id` on history) |
 | `GET` | `/api/v1/junior/search?q=` | FTS over that user’s threads/messages (`limit`, `cursor` or `before_id`) |
@@ -148,6 +149,7 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/agents` | Record a launch (`context_ready`); does not call Cursor |
 | `GET` | `/api/v1/junior/sessions` | Last-seen venue/device (`limit`, `cursor` or `before_id`; optional `venue`) |
 | `GET` | `/api/v1/junior/sessions/{id}` | One session the signed-in user owns |
+| `POST` | `/api/v1/junior/sessions/{id}` | Update an existing session (404 if missing) |
 | `POST` | `/api/v1/junior/sessions` | Heartbeat for this venue/device |
 
 Venues: `storykeep`, `phone`, `windows`, `voice`. **Phone is first-class** (`venue=phone` on the same routes — no separate phone DB). Overlay uses `venue=windows`. Message `meta` can hold overlay screen/OCR or voice extras (`screen`, `voice`, `dictation_target`). See [`docs/junior_shared_memory.md`](docs/junior_shared_memory.md).
