@@ -290,6 +290,29 @@ def get_memory(
     return JuniorSharedMemoryOut.model_validate(store.memory_owned(db, user, memory_id))
 
 
+@router.post("/memories/{memory_id}", response_model=JuniorSharedMemoryOut)
+def update_memory(
+    memory_id: UUID,
+    payload: JuniorSharedMemoryIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMemoryOut:
+    fields = payload.model_fields_set
+    row = store.update_memory(
+        db,
+        user,
+        memory_id,
+        content=payload.content if "content" in fields else None,
+        kind=payload.kind if "kind" in fields else None,
+        source_thread=payload.source_thread if "source_thread" in fields else None,
+        set_kind="kind" in fields,
+        set_source_thread="source_thread" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedMemoryOut.model_validate(row)
+
+
 @router.post("/memories", response_model=JuniorSharedMemoryOut)
 def upsert_memory(
     payload: JuniorSharedMemoryIn,
@@ -324,6 +347,15 @@ def list_sessions(
     )
     _page_headers(response, next_cursor)
     return [JuniorSessionOut.model_validate(row) for row in rows]
+
+
+@router.get("/sessions/{session_id}", response_model=JuniorSessionOut)
+def get_session(
+    session_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSessionOut:
+    return JuniorSessionOut.model_validate(store.session_owned(db, user, session_id))
 
 
 @router.post("/sessions", response_model=JuniorSessionOut)
