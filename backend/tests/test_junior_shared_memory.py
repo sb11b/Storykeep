@@ -127,6 +127,14 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ).status_code,
             401,
         )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/messages/{uuid.uuid4()}",
+                json={"text": "revised turn", "venue": "phone"},
+            ).status_code,
+            401,
+        )
+        self.assertEqual(client.get("/api/v1/junior/projects/storykeep").status_code, 401)
 
     def test_demo_gets_403(self):
         app = _app(SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True))
@@ -145,8 +153,10 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("GET", f"/api/v1/junior/agents/{uuid.uuid4()}"),
             ("GET", f"/api/v1/junior/sessions/{uuid.uuid4()}"),
             ("GET", f"/api/v1/junior/messages/{uuid.uuid4()}"),
+            ("GET", "/api/v1/junior/projects/storykeep"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/sessions/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/messages/{uuid.uuid4()}"),
             ("POST", "/api/v1/junior/messages"),
             ("POST", "/api/v1/junior/agents"),
             ("POST", "/api/v1/junior/memories"),
@@ -300,6 +310,25 @@ class JuniorSharedRouteTests(unittest.TestCase):
         self.assertEqual(loaded.json()["content"], "Remember the trailer quote")
         self.assertEqual(str(one_msg.call_args.args[2]), str(user_msg.id))
 
+        revised = SimpleNamespace(
+            id=user_msg.id,
+            thread_id=user_msg.thread_id,
+            role=user_msg.role,
+            content="revised turn",
+            venue="phone",
+            meta={},
+            created_at=user_msg.created_at,
+        )
+        with patch("app.routers.junior_shared.store.update_message", return_value=revised) as patched:
+            changed = TestClient(app).post(
+                f"/api/v1/junior/messages/{user_msg.id}",
+                json={"text": "revised turn", "venue": "phone"},
+            )
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(changed.json()["content"], "revised turn")
+        self.assertEqual(str(patched.call_args.args[2]), str(user_msg.id))
+        self.assertEqual(patched.call_args.kwargs["content"], "revised turn")
+
         with patch("app.routers.junior_shared.store.update_thread", return_value=archived) as updated:
             closed = TestClient(app).post(
                 f"/api/v1/junior/threads/{thread_id}",
@@ -419,6 +448,18 @@ class JuniorSharedServiceTests(unittest.TestCase):
         ]
         with self.assertRaises(HTTPException) as caught:
             store.message_owned(db, owner, uuid.uuid4())
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_update_message_is_404_for_other_user(self):
+        owner = _owner()
+        other = uuid.uuid4()
+        db = MagicMock()
+        db.get.side_effect = [
+            SimpleNamespace(id=uuid.uuid4(), thread_id=uuid.uuid4()),
+            SimpleNamespace(id=uuid.uuid4(), user_id=other),
+        ]
+        with self.assertRaises(HTTPException) as caught:
+            store.update_message(db, owner, uuid.uuid4(), content="revised turn")
         self.assertEqual(caught.exception.status_code, 404)
 
     def test_session_owned_is_404_for_other_user(self):
@@ -699,6 +740,12 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertEqual(changed.json()["display_name"], "StoryKeep web")
         self.assertEqual(updated.call_args.args[2], "storykeep")
         self.assertEqual(updated.call_args.kwargs["display_name"], "StoryKeep web")
+
+        with patch("app.routers.junior_shared.store.get_project", return_value=row) as one_project:
+            loaded = TestClient(app).get("/api/v1/junior/projects/storykeep")
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(loaded.json()["slug"], "storykeep")
+        self.assertEqual(one_project.call_args.args[2], "storykeep")
 
     def test_agent_context_and_launch_stub(self):
         now = datetime.now(timezone.utc)

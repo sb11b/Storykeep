@@ -165,6 +165,28 @@ def message_owned(db: Session, user: User, message_id: UUID) -> JuniorThreadMess
     return row
 
 
+def update_message(
+    db: Session,
+    user: User,
+    message_id: UUID,
+    *,
+    content: str | None = None,
+    venue: str | None = None,
+    meta: dict[str, Any] | None = None,
+    set_venue: bool = False,
+    set_meta: bool = False,
+) -> JuniorThreadMessage:
+    row = message_owned(db, user, message_id)
+    if content is not None:
+        row.content = _clean_text(content, max_len=CONTENT_MAX)
+    if set_venue and venue is not None:
+        row.venue = normalize_venue(venue)
+    if set_meta and meta is not None:
+        row.meta = meta
+    db.flush()
+    return row
+
+
 def update_session(
     db: Session,
     user: User,

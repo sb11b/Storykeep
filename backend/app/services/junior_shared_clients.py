@@ -16,6 +16,7 @@ Failed thread updates replay on POST /threads/{id}. GET /memories/{id} loads one
 Failed project updates replay on POST /projects/{slug}. GET /agents/{id} loads one agent run.
 Failed memory updates replay on POST /memories/{id}. GET /sessions/{id} loads one session.
 Failed session updates replay on POST /sessions/{id}. GET /messages/{id} loads one message.
+Failed message updates replay on POST /messages/{id}. GET /projects/{slug} loads one project.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-message-get-v1"
+HEALTH_STAMP = "junior-client-project-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -108,6 +109,15 @@ def _is_session_update_path(path: str) -> bool:
     if cleaned.endswith("/sessions"):
         return False
     return "/sessions/" in cleaned
+
+
+def _is_message_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    if cleaned.endswith("/messages"):
+        return False
+    if "/threads/" in cleaned:
+        return False
+    return "/messages/" in cleaned
 
 
 def next_page_cursor(response: Any) -> str | None:
@@ -315,6 +325,8 @@ class SharedMemoryClient:
             return "session"
         if _is_session_update_path(path):
             return "session_update"
+        if _is_message_update_path(path):
+            return "message_update"
         if path.rstrip("/").endswith("/threads"):
             return "thread"
         if _is_thread_update_path(path):
@@ -369,6 +381,15 @@ class SharedMemoryClient:
                     venue=post.get("venue"),
                     device_label=post.get("device_label"),
                 )
+        if kind == "message_update":
+            message_id = post.get("id") or post.get("message_id")
+            if message_id:
+                return self.update_message(
+                    message_id,
+                    str(post.get("content") or post.get("text") or text),
+                    venue=post.get("venue"),
+                    meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+                )
         if kind == "thread":
             return self.open_thread(str(post.get("title") or ""), text=text or None)
         if kind == "thread_update" and thread_id:
@@ -415,6 +436,8 @@ class SharedMemoryClient:
             kind = "session"
         elif _is_session_update_path(path):
             kind = "session_update"
+        elif _is_message_update_path(path):
+            kind = "message_update"
         elif path.rstrip("/").endswith("/threads"):
             kind = "thread"
         elif _is_thread_update_path(path):
@@ -428,6 +451,7 @@ class SharedMemoryClient:
             "status": body.get("status"),
             "thread_id": body.get("thread_id"),
             "session_id": body.get("session_id") or body.get("id"),
+            "message_id": body.get("id") if kind == "message_update" else None,
             "slug": body.get("slug"),
             "display_name": body.get("display_name"),
             "project_kind": body.get("kind") if kind == "project" else None,
@@ -718,6 +742,30 @@ class SharedMemoryClient:
             action="load this message",
         )
 
+    def update_message(
+        self,
+        message_id: UUID | str,
+        content: str,
+        *,
+        venue: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "id": str(message_id),
+            "content": content,
+        }
+        if venue is not None:
+            body["venue"] = venue
+        if meta is not None:
+            body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/messages/{message_id}",
+            action="update this message",
+            body=body,
+            json={key: value for key, value in body.items() if key != "id"},
+        )
+
     def get_memory(self, memory_id: UUID | str) -> Any:
         return self._read(
             f"{API_PREFIX}/memories/{memory_id}",
@@ -974,11 +1022,15 @@ class SharedMemoryClient:
             **extra,
         )
 
-    def project(self) -> Any:
+    def get_project(self, slug: str | None = None) -> Any:
+        target = slug or self.project_slug
         return self._read(
-            f"{API_PREFIX}/projects/{self.project_slug}",
-            action="load the project",
+            f"{API_PREFIX}/projects/{target}",
+            action="load this project",
         )
+
+    def project(self) -> Any:
+        return self.get_project(self.project_slug)
 
 
 def phone_client(

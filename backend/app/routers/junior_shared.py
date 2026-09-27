@@ -171,6 +171,29 @@ def get_message(
     return JuniorSharedMessageOut.model_validate(store.message_owned(db, user, message_id))
 
 
+@router.post("/messages/{message_id}", response_model=JuniorSharedMessageOut)
+def update_message(
+    message_id: UUID,
+    payload: JuniorSharedMessageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    fields = payload.model_fields_set
+    row = store.update_message(
+        db,
+        user,
+        message_id,
+        content=payload.body or None,
+        venue=payload.venue if "venue" in fields else None,
+        meta=payload.meta if "meta" in fields else None,
+        set_venue="venue" in fields,
+        set_meta="meta" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedMessageOut.model_validate(row)
+
+
 @router.get("/messages", response_model=list[JuniorSharedMessageOut])
 def list_recent_messages(
     response: Response,
