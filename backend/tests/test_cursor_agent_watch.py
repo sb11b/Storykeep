@@ -25,7 +25,9 @@ class AgentFollowUpTests(unittest.TestCase):
         self.assertIsNotNone(text)
         assert text is not None
         self.assertIn("Cloud Agent update", text)
-        self.assertIn("git merge github/cursor/mail-pin", text)
+        self.assertIn("git merge --abort", text)
+        self.assertIn("git reset --hard github/main", text)
+        self.assertIn("git merge --ff-only github/cursor/mail-pin", text)
         self.assertIn("What changed: Fixed the mail list contrast", text)
         self.assertIn("pull/12", text)
         self.assertNotIn("YOUR-BRANCH-NAME", text)
@@ -65,7 +67,8 @@ class AgentFollowUpTests(unittest.TestCase):
         self.assertEqual(row.status, "posted")
         self.assertEqual(row.run_id, "run-1")
         content = append_message.call_args.kwargs["content"]
-        self.assertIn("git merge github/cursor/mail-pin", content)
+        self.assertIn("git merge --abort", content)
+        self.assertIn("git merge --ff-only github/cursor/mail-pin", content)
 
     @patch("app.services.cursor_agent_watch.grok_store.append_message")
     @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")

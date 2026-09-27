@@ -78,6 +78,13 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertIn("git reset --hard github/main", reply)
         self.assertIn("Do not push", reply)
         self.assertIsNone(cursor_agent_tool.local_merge_repair("go ahead and start next step"))
+        asked = cursor_agent_tool.local_merge_repair(
+            "correct the error then give me a paste for ubantu"
+        )
+        assert asked is not None
+        self.assertIn("git merge --abort", asked)
+        self.assertIn("git reset --hard github/main", asked)
+        self.assertFalse(cursor_agent_tool.wants_start("correct the error then give me a paste for ubantu"))
 
     def test_extract_branch_ignores_git_pack_line(self):
         msg = (

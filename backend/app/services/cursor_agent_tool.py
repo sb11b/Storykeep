@@ -605,8 +605,11 @@ def sequenced_task(message: str) -> str | None:
 
 
 _LOCAL_MERGE_RE = re.compile(
-    r"needs merge|unmerged files|resolve your current index|Merging is not possible|Pulling is not possible",
-    re.I,
+    r"needs merge|unmerged files|resolve your current index|Merging is not possible|Pulling is not possible"
+    r"|(?:ubuntu|ubantu).{0,80}(?:error|paste|fix|correct)"
+    r"|(?:error|paste|fix|correct).{0,80}(?:ubuntu|ubantu)"
+    r"|(?:fix|correct) the error.{0,50}paste",
+    re.I | re.S,
 )
 
 LOCAL_MERGE_REPLY = """Your local Storykeep checkout is in the middle of a merge. GitHub main already has this work. Do not push.
@@ -763,16 +766,14 @@ def push_workflow_for_user(
     return (
         "Push to main (Ubuntu) — Cloud Agents commit on cursor/*, not your local main:\n\n"
         f"Easiest: open {agent_line} → **Open in Cursor** → review → push (or merge the PR).\n\n"
-        "Existing clone in Cursor terminal:\n"
+        "Existing clone in Cursor terminal. Abort a stuck merge first, then match GitHub main:\n"
         "```bash\n"
-        "cd ~/Storykeep   # or your clone path\n"
+        "cd ~/Storykeep\n"
+        "git merge --abort\n"
         f"git remote add github {repo_https} 2>/dev/null || true\n"
         "git fetch github\n"
-        "git branch -r | grep 'github/cursor/'   # note the branch name\n"
         f"git checkout {starting_branch}\n"
-        f"git pull github {starting_branch}\n"
-        "git merge github/cursor/YOUR-BRANCH-NAME\n"
-        f"git push github {starting_branch}\n"
+        f"git reset --hard github/{starting_branch}\n"
         "```\n"
         f"{pr_note}\n"
         "Then in Junior: Show GitHub status, then deploy Storykeep."
@@ -1026,11 +1027,12 @@ def merge_commands(branch: str, *, starting_branch: str = "main", repo_slug: str
     return (
         "```bash\n"
         "cd ~/Storykeep\n"
+        "git merge --abort\n"
         f"git remote add github https://github.com/{slug}.git 2>/dev/null || true\n"
         "git fetch github\n"
         f"git checkout {base}\n"
-        f"git pull github {base}\n"
-        f"git merge github/{remote}\n"
+        f"git reset --hard github/{base}\n"
+        f"git merge --ff-only github/{remote}\n"
         f"git push github {base}\n"
         "```"
     )

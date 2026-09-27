@@ -38,7 +38,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-agent-get-v1"
+HEALTH_STAMP = "junior-ubuntu-paste-v1"
 
 
 class SharedMemoryError(Exception):

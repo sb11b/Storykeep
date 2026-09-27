@@ -108,7 +108,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_is_agent_get_v1(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-agent-get-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-ubuntu-paste-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
