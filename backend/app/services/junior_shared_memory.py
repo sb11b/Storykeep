@@ -33,6 +33,7 @@ SUMMARY_EVERY = 8
 REMEMBER_WHEN = re.compile(r"\bremember when\b", re.I)
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 PROJECT_KINDS = frozenset({"app", "api", "overlay", "infra", "other"})
+AGENT_STATUSES = frozenset({"context_ready", "launched", "failed", "cancelled"})
 OWNER_EMAIL = "angry.tune8751@fastmail.com"
 
 SEED_PROJECTS: tuple[dict[str, Any], ...] = (
@@ -768,6 +769,25 @@ def search_page(
     return paginate_items(hits, limit=cap, cursor=cursor, before_id=before_id, id_attr="message_id")
 
 
+def search_hit_owned(db: Session, user: User, message_id: UUID) -> dict[str, Any]:
+    message = db.get(JuniorThreadMessage, message_id)
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search hit not found")
+    thread = db.get(JuniorThread, message.thread_id)
+    if thread is None or thread.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search hit not found")
+    snippet = (message.content or "")[:240]
+    return {
+        "thread_id": thread.id,
+        "thread_title": thread.title,
+        "message_id": message.id,
+        "snippet": snippet,
+        "venue": message.venue,
+        "created_at": message.created_at,
+        "rank": 0.0,
+    }
+
+
 def list_memories(db: Session, user: User, *, kind: str | None = None) -> list[JuniorMemoryFact]:
     rows, _ = list_memories_page(db, user, kind=kind)
     return rows
@@ -1070,6 +1090,46 @@ def agent_run_owned(db: Session, user: User, run_id: UUID) -> JuniorAgentRun:
     row = db.get(JuniorAgentRun, run_id)
     if row is None or row.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return row
+
+
+def normalize_agent_status(value: str | None) -> str:
+    token = (value or "").strip().lower()
+    if token not in AGENT_STATUSES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid agent status")
+    return token
+
+
+def update_agent_run(
+    db: Session,
+    user: User,
+    run_id: UUID,
+    *,
+    prompt: str | None = None,
+    status_value: str | None = None,
+    cursor_agent_id: str | None = None,
+    thread_id: UUID | None = None,
+    meta: dict[str, Any] | None = None,
+    set_status: bool = False,
+    set_cursor_agent_id: bool = False,
+    set_thread_id: bool = False,
+    set_meta: bool = False,
+) -> JuniorAgentRun:
+    row = agent_run_owned(db, user, run_id)
+    if prompt is not None:
+        row.prompt = _clean_text(prompt, max_len=CONTENT_MAX)
+    if set_status:
+        row.status = normalize_agent_status(status_value)
+    if set_cursor_agent_id:
+        cleaned = (cursor_agent_id or "").strip()
+        row.cursor_agent_id = cleaned or None
+    if set_thread_id:
+        if thread_id is not None:
+            thread_owned(db, user, thread_id)
+        row.thread_id = thread_id
+    if set_meta and meta is not None:
+        row.meta = meta
+    db.flush()
     return row
 
 

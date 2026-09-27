@@ -17,6 +17,7 @@ Failed project updates replay on POST /projects/{slug}. GET /agents/{id} loads o
 Failed memory updates replay on POST /memories/{id}. GET /sessions/{id} loads one session.
 Failed session updates replay on POST /sessions/{id}. GET /messages/{id} loads one message.
 Failed message updates replay on POST /messages/{id}. GET /projects/{slug} loads one project.
+Failed agent updates replay on POST /agents/{id}. GET /search/{id} loads one search hit.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-get-v1"
+HEALTH_STAMP = "junior-client-search-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -118,6 +119,13 @@ def _is_message_update_path(path: str) -> bool:
     if "/threads/" in cleaned:
         return False
     return "/messages/" in cleaned
+
+
+def _is_agent_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    if cleaned.endswith("/agents"):
+        return False
+    return "/agents/" in cleaned
 
 
 def next_page_cursor(response: Any) -> str | None:
@@ -313,6 +321,8 @@ class SharedMemoryClient:
             return "continue"
         if path.rstrip("/").endswith("/agents"):
             return "agent"
+        if _is_agent_update_path(path):
+            return "agent_update"
         if path.rstrip("/").endswith("/projects"):
             return "project"
         if _is_project_update_path(path):
@@ -355,6 +365,17 @@ class SharedMemoryClient:
                 thread_id=thread_id,
                 q=post.get("q"),
             )
+        if kind == "agent_update":
+            run_id = post.get("id") or post.get("run_id")
+            if run_id:
+                return self.update_agent(
+                    run_id,
+                    prompt=str(post.get("prompt") or text) or None,
+                    status=post.get("status"),
+                    cursor_agent_id=post.get("cursor_agent_id"),
+                    thread_id=thread_id,
+                    meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+                )
         if kind == "memory":
             return self.upsert_memory(
                 str(post.get("content") or text),
@@ -424,6 +445,8 @@ class SharedMemoryClient:
             kind = "continue"
         elif path.rstrip("/").endswith("/agents"):
             kind = "agent"
+        elif _is_agent_update_path(path):
+            kind = "agent_update"
         elif path.rstrip("/").endswith("/projects"):
             kind = "project"
         elif _is_project_update_path(path):
@@ -462,7 +485,9 @@ class SharedMemoryClient:
             "prompt": body.get("prompt"),
             "project_slug": body.get("project_slug"),
             "q": body.get("q"),
+            "cursor_agent_id": body.get("cursor_agent_id"),
             "id": body.get("id"),
+            "run_id": body.get("id") if kind == "agent_update" else None,
             "memory_id": body.get("id"),
             "memory_kind": body.get("kind") if kind in {"memory", "memory_update"} else None,
             "source_thread": body.get("source_thread"),
@@ -686,6 +711,12 @@ class SharedMemoryClient:
         params["q"] = query
         return self._read(f"{API_PREFIX}/search", action="search", params=params)
 
+    def get_search_hit(self, message_id: UUID | str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/search/{message_id}",
+            action="load this search hit",
+        )
+
     def get_sessions(
         self,
         *,
@@ -904,6 +935,35 @@ class SharedMemoryClient:
         return self._read(
             f"{API_PREFIX}/agents/{run_id}",
             action="load this agent run",
+        )
+
+    def update_agent(
+        self,
+        run_id: UUID | str,
+        *,
+        prompt: str | None = None,
+        status: str | None = None,
+        cursor_agent_id: str | None = None,
+        thread_id: UUID | str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {"id": str(run_id)}
+        if prompt is not None:
+            body["prompt"] = prompt
+        if status is not None:
+            body["status"] = status
+        if cursor_agent_id is not None:
+            body["cursor_agent_id"] = cursor_agent_id
+        if thread_id is not None:
+            body["thread_id"] = str(thread_id)
+        if meta is not None:
+            body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/agents/{run_id}",
+            action="update this agent run",
+            body=body,
+            json={key: value for key, value in body.items() if key != "id"},
         )
 
     def upsert_memory(

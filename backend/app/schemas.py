@@ -929,6 +929,14 @@ class JuniorAgentLaunchIn(BaseModel):
     q: str | None = Field(default=None, max_length=200)
 
 
+class JuniorAgentRunIn(BaseModel):
+    prompt: str | None = Field(default=None, max_length=32000)
+    status: str | None = Field(default=None, max_length=40)
+    cursor_agent_id: str | None = Field(default=None, max_length=120)
+    thread_id: uuid.UUID | None = None
+    meta: dict[str, Any] | None = None
+
+
 class JuniorAgentRunOut(BaseModel):
     id: uuid.UUID
     project_slug: str

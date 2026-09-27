@@ -117,7 +117,7 @@ class CursorAgentToolTests(unittest.TestCase):
         task = cursor_agent_tool.next_step_task(msg)
         self.assertIsNotNone(task)
         assert task is not None
-        self.assertIn("Sequenced #17", task)
+        self.assertIn("Sequenced #18", task)
         self.assertNotIn("cannot start an agent", task.lower())
         self.assertNotIn("isn't defined", task.lower())
         self.assertFalse(cursor_agent_tool.wants_start("do not send the next step"))
@@ -166,6 +166,10 @@ class CursorAgentToolTests(unittest.TestCase):
         assert sixteen is not None
         self.assertIn("Sequenced #16", sixteen)
         self.assertIn("junior-client-project-get-v1", sixteen)
+        seventeen = cursor_agent_tool.next_step_task("go ahead and start sequenced #17")
+        assert seventeen is not None
+        self.assertIn("Sequenced #17", seventeen)
+        self.assertIn("junior-client-search-get-v1", seventeen)
 
     def test_sequence_number_five_starts(self):
         msg = "go ahead and start Sequence number five."
@@ -225,6 +229,10 @@ class CursorAgentToolTests(unittest.TestCase):
         assert sixteen is not None
         self.assertIn("Sequenced #16", sixteen)
         self.assertIn("junior-client-project-get-v1", sixteen)
+        seventeen = cursor_agent_tool.sequenced_task("sequenced #17")
+        assert seventeen is not None
+        self.assertIn("Sequenced #17", seventeen)
+        self.assertIn("junior-client-search-get-v1", seventeen)
 
     @patch("app.services.cursor_agent_tool.httpx.Client")
     @patch("app.services.cursor_agent_tool.settings")

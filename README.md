@@ -136,6 +136,7 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/messages` | Same turn; omit `thread_id` to use last `open` thread (or create one) |
 | `POST` | `/api/v1/junior/threads/{id}/continue` | Resume a thread; with `text` this is another turn (`limit`, `cursor` or `before_id` on history) |
 | `GET` | `/api/v1/junior/search?q=` | FTS over that user’s threads/messages (`limit`, `cursor` or `before_id`) |
+| `GET` | `/api/v1/junior/search/{id}` | One search hit the signed-in user owns |
 | `GET` | `/api/v1/junior/memories` | Durable facts (`?kind=` optional; same page params) |
 | `GET` | `/api/v1/junior/memories/{id}` | One memory the signed-in user owns |
 | `POST` | `/api/v1/junior/memories` | Add a fact, or update when `id` is set |
@@ -148,6 +149,7 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `GET` | `/api/v1/junior/agents` | Agent-run list (`limit`, `cursor` or `before_id`; optional `project`) |
 | `GET` | `/api/v1/junior/agents/{id}` | One agent run the signed-in user owns |
 | `POST` | `/api/v1/junior/agents` | Record a launch (`context_ready`); does not call Cursor |
+| `POST` | `/api/v1/junior/agents/{id}` | Update an existing agent run (404 if missing) |
 | `GET` | `/api/v1/junior/sessions` | Last-seen venue/device (`limit`, `cursor` or `before_id`; optional `venue`) |
 | `GET` | `/api/v1/junior/sessions/{id}` | One session the signed-in user owns |
 | `POST` | `/api/v1/junior/sessions/{id}` | Update an existing session (404 if missing) |
