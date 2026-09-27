@@ -561,6 +561,35 @@ class CursorStartPayloadTests(unittest.TestCase):
         self.assertIn("https://cursor.com/agents/agent-5", response.text)
         self.assertIn("Sequenced #5", start_agent.call_args.args[0])
 
+    def test_unmerged_git_index_returns_abort_steps(self):
+        app = _app()
+        with (
+            patch.object(chat_service, "require_key", return_value="xai-test"),
+            patch.object(chat_service, "enforce_rate_limit"),
+            patch("app.routers.chat.grok_store.should_persist", return_value=False),
+            patch("app.routers.chat.cursor_agent_tool.start_agent") as start_agent,
+            patch("app.routers.chat.cursor_agent_tool.owner_can_use", return_value=True),
+        ):
+            response = TestClient(app).post(
+                "/api/v1/chat",
+                json={
+                    "message": (
+                        "need to fix errors\n"
+                        "README.md: needs merge\n"
+                        "error: you need to resolve your current index first\n"
+                        "go ahead and start next step"
+                    ),
+                    "model": "auto",
+                    "reasoning_effort": "auto",
+                    "pane_name": "StoryKeep",
+                },
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("git merge --abort", response.text)
+        self.assertIn("Do not push", response.text)
+        self.assertNotIn("Branch '0'", response.text)
+        start_agent.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

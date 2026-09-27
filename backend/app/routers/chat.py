@@ -1198,8 +1198,10 @@ def _chat(
     will_github = github_tool.wants_github(user_text)
     will_deploy = railway_tool.wants_railway_deploy(user_text)
     cursor_enabled = cursor_agent_tool.owner_can_use(user)
-    will_cursor_start = junior_model.should_server_start_agent(
-        user_text, configured=cursor_enabled
+    merge_repair_text = cursor_agent_tool.local_merge_repair(user_text)
+    will_cursor_start = (
+        merge_repair_text is None
+        and junior_model.should_server_start_agent(user_text, configured=cursor_enabled)
     )
     ops_turn = owner_ops and junior_model.is_ops_turn(user_text)
     delegate_turn = owner_ops and junior_model.is_delegate_turn(user_text)
@@ -1578,6 +1580,23 @@ def _chat(
             if morning_text:
                 await emit_delta(morning_text)
                 yield chat_service.encode_sse({"delta": morning_text, "stream_status": "writing"})
+                if persist and conversation_id:
+                    assistant_message_id = _persist_assistant("".join(assistant_parts))
+                    if assistant_message_id:
+                        yield chat_service.encode_sse(
+                            {
+                                "conversation_id": str(conversation_id),
+                                "assistant_message_id": assistant_message_id,
+                                "model": resolved_model,
+                                "model_choice": model_choice,
+                                "reasoning_effort": resolved_reasoning,
+                            }
+                        )
+                yield chat_service.encode_sse("[DONE]")
+                return
+            if merge_repair_text:
+                await emit_delta(merge_repair_text)
+                yield chat_service.encode_sse({"delta": merge_repair_text, "stream_status": "writing"})
                 if persist and conversation_id:
                     assistant_message_id = _persist_assistant("".join(assistant_parts))
                     if assistant_message_id:

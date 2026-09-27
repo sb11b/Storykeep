@@ -62,6 +62,23 @@ class CursorAgentToolTests(unittest.TestCase):
         )
         self.assertEqual(cursor_agent_tool.extract_branch(msg), "main")
 
+    def test_local_merge_conflict_does_not_start_an_agent(self):
+        msg = (
+            "need to fix errors\n"
+            "README.md: needs merge\n"
+            "error: you need to resolve your current index first\n"
+            "error: Pulling is not possible because you have unmerged files.\n"
+            "go ahead and start next step\n"
+            "pack-reused 0 (from 0)\n"
+        )
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+        reply = cursor_agent_tool.local_merge_repair(msg)
+        assert reply is not None
+        self.assertIn("git merge --abort", reply)
+        self.assertIn("git reset --hard github/main", reply)
+        self.assertIn("Do not push", reply)
+        self.assertIsNone(cursor_agent_tool.local_merge_repair("go ahead and start next step"))
+
     def test_extract_branch_ignores_git_pack_line(self):
         msg = (
             "go ahead and start next step\n"

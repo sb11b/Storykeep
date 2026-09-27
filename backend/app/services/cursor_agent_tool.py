@@ -575,9 +575,32 @@ def sequenced_task(message: str) -> str | None:
     return polish_2_task(message) or next_step_task(message)
 
 
+_LOCAL_MERGE_RE = re.compile(
+    r"needs merge|unmerged files|resolve your current index|Merging is not possible|Pulling is not possible",
+    re.I,
+)
+
+LOCAL_MERGE_REPLY = """Your local Storykeep checkout is in the middle of a merge. GitHub main already has this work. Do not push.
+
+```bash
+cd ~/Storykeep
+git merge --abort
+git fetch github
+git checkout main
+git reset --hard github/main
+```
+"""
+
+
+def local_merge_repair(message: str) -> str | None:
+    if _LOCAL_MERGE_RE.search(message or ""):
+        return LOCAL_MERGE_REPLY
+    return None
+
+
 def wants_start(message: str) -> bool:
     text = (message or "").strip()
-    if not text:
+    if not text or local_merge_repair(text):
         return False
     if sequenced_task(text):
         return True
