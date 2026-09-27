@@ -845,6 +845,11 @@ class JuniorSharedContinueOut(BaseModel):
     detail: str | None = None
 
 
+class JuniorSharedSearchHitIn(BaseModel):
+    snippet: str | None = Field(default=None, max_length=240)
+    venue: str | None = Field(default=None, max_length=16)
+
+
 class JuniorSharedSearchHitOut(BaseModel):
     thread_id: uuid.UUID
     thread_title: str | None = None

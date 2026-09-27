@@ -107,8 +107,8 @@ def _windows(http):
 
 
 class SharedClientSmokeTests(unittest.TestCase):
-    def test_health_stamp_is_search_get_v1(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-search-get-v1")
+    def test_health_stamp_is_context_get_v1(self):
+        self.assertEqual(HEALTH_STAMP, "junior-client-context-get-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -135,6 +135,7 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertTrue(any(path.endswith("/sessions/{session_id}") for path in junior))
         self.assertTrue(any(path.endswith("/messages/{message_id}") for path in junior))
         self.assertTrue(any(path.endswith("/search/{message_id}") for path in junior))
+        self.assertTrue(any(path.endswith("/agent-context/{slug}") for path in junior))
 
     def test_phone_and_windows_require_login(self):
         client = TestClient(_app())
@@ -205,6 +206,11 @@ class SharedClientSmokeTests(unittest.TestCase):
             _phone(client).get_search_hit(uuid.uuid4())
         self.assertEqual(one_hit.exception.status_code, 401)
         self.assertIn("did not load this search hit", one_hit.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as one_ctx:
+            _windows(client).get_agent_context("storykeep")
+        self.assertEqual(one_ctx.exception.status_code, 401)
+        self.assertIn("did not load this agent context", one_ctx.exception.user_message)
 
     def test_demo_is_forbidden_for_both_clients(self):
         demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
@@ -298,6 +304,16 @@ class SharedClientSmokeTests(unittest.TestCase):
             _windows(client).get_search_hit(uuid.uuid4())
         self.assertEqual(one_hit.exception.status_code, 403)
         self.assertIn("did not load this search hit", one_hit.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as search_updated:
+            _phone(client).update_search_hit(uuid.uuid4(), snippet="pinned snippet")
+        self.assertEqual(search_updated.exception.status_code, 403)
+        self.assertIn("did not update this search hit", search_updated.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as one_ctx:
+            _windows(client).get_agent_context("storykeep")
+        self.assertEqual(one_ctx.exception.status_code, 403)
+        self.assertIn("did not load this agent context", one_ctx.exception.user_message)
 
     def test_phone_posts_on_the_shared_messages_route(self):
         thread, user_msg = _turn("phone")
@@ -625,8 +641,7 @@ class SharedClientSmokeTests(unittest.TestCase):
         overlay = _windows(http)
         thread_id = uuid.uuid4()
         overlay.get_agent_context("storykeep", q="finance", thread_id=thread_id)
-        self.assertEqual(http.calls[1], ("GET", "/api/v1/junior/agent-context"))
-        self.assertEqual(http.params[1]["project"], "storykeep")
+        self.assertEqual(http.calls[1], ("GET", "/api/v1/junior/agent-context/storykeep"))
         self.assertEqual(http.params[1]["q"], "finance")
         self.assertEqual(http.params[1]["thread_id"], str(thread_id))
 
@@ -635,7 +650,7 @@ class SharedClientSmokeTests(unittest.TestCase):
                 _phone(http).get_agent_context()
         self.assertEqual(ctx.exception.status_code, 403)
         self.assertIn("cannot use Junior shared memory", ctx.exception.user_message)
-        self.assertIn("did not load agent context", ctx.exception.user_message)
+        self.assertIn("did not load this agent context", ctx.exception.user_message)
 
     def test_project_and_agent_writes_queue_and_replay(self):
         path = _queue_path()
@@ -985,6 +1000,40 @@ class SharedClientSmokeTests(unittest.TestCase):
         response = replayed.replay_after_login("owner-session")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(replay_http.calls, [("POST", f"/api/v1/junior/agents/{run_id}")])
+        self.assertFalse(path.exists())
+
+    def test_get_agent_context_slug_403(self):
+        http = _ScriptedHttp([403, 403, 403])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _phone(http).get_agent_context("storykeep")
+        self.assertEqual(http.calls[0], ("GET", "/api/v1/junior/agent-context/storykeep"))
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("cannot use Junior shared memory", ctx.exception.user_message)
+        self.assertIn("did not load this agent context", ctx.exception.user_message)
+
+    def test_search_update_queues_and_replays(self):
+        path = _queue_path()
+        message_id = uuid.uuid4()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                phone_client(fail, queue_path=path).update_search_hit(
+                    message_id,
+                    snippet="pinned snippet",
+                )
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertIn("did not update this search hit", ctx.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "search_update")
+        self.assertEqual(restarted.last_failed_post["snippet"], "pinned snippet")
+        self.assertEqual(restarted.last_failed_post["message_id"], str(message_id))
+
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(replay_http.calls, [("POST", f"/api/v1/junior/search/{message_id}")])
         self.assertFalse(path.exists())
 
 

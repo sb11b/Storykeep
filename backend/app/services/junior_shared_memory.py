@@ -754,19 +754,22 @@ def search_page(
     )
     hits: list[dict[str, Any]] = []
     for thread, message, rank in db.execute(stmt):
-        snippet = (message.content or "")[:240]
-        hits.append(
-            {
-                "thread_id": thread.id,
-                "thread_title": thread.title,
-                "message_id": message.id,
-                "snippet": snippet,
-                "venue": message.venue,
-                "created_at": message.created_at,
-                "rank": float(rank or 0),
-            }
-        )
+        hits.append(_search_hit_dict(thread, message, rank=float(rank or 0)))
     return paginate_items(hits, limit=cap, cursor=cursor, before_id=before_id, id_attr="message_id")
+
+
+def _search_hit_dict(thread: JuniorThread, message: JuniorThreadMessage, *, rank: float = 0.0) -> dict[str, Any]:
+    meta = message.meta if isinstance(getattr(message, "meta", None), dict) else {}
+    snippet = str(meta.get("search_snippet") or "").strip() or (message.content or "")[:240]
+    return {
+        "thread_id": thread.id,
+        "thread_title": thread.title,
+        "message_id": message.id,
+        "snippet": snippet,
+        "venue": message.venue,
+        "created_at": message.created_at,
+        "rank": float(rank or 0),
+    }
 
 
 def search_hit_owned(db: Session, user: User, message_id: UUID) -> dict[str, Any]:
@@ -776,16 +779,35 @@ def search_hit_owned(db: Session, user: User, message_id: UUID) -> dict[str, Any
     thread = db.get(JuniorThread, message.thread_id)
     if thread is None or thread.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search hit not found")
-    snippet = (message.content or "")[:240]
-    return {
-        "thread_id": thread.id,
-        "thread_title": thread.title,
-        "message_id": message.id,
-        "snippet": snippet,
-        "venue": message.venue,
-        "created_at": message.created_at,
-        "rank": 0.0,
-    }
+    return _search_hit_dict(thread, message)
+
+
+def update_search_hit(
+    db: Session,
+    user: User,
+    message_id: UUID,
+    *,
+    snippet: str | None = None,
+    venue: str | None = None,
+    set_snippet: bool = False,
+    set_venue: bool = False,
+) -> dict[str, Any]:
+    message = message_owned(db, user, message_id)
+    thread = db.get(JuniorThread, message.thread_id)
+    if thread is None or thread.user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search hit not found")
+    meta = dict(message.meta) if isinstance(message.meta, dict) else {}
+    if set_snippet:
+        cleaned = _clean_text(snippet, max_len=240, required=False)
+        if cleaned:
+            meta["search_snippet"] = cleaned
+        else:
+            meta.pop("search_snippet", None)
+        message.meta = meta
+    if set_venue and venue is not None:
+        message.venue = normalize_venue(venue)
+    db.flush()
+    return _search_hit_dict(thread, message)
 
 
 def list_memories(db: Session, user: User, *, kind: str | None = None) -> list[JuniorMemoryFact]:
