@@ -850,6 +850,12 @@ class JuniorSharedSearchHitIn(BaseModel):
     venue: str | None = Field(default=None, max_length=16)
 
 
+class JuniorThreadSearchIn(BaseModel):
+    """Search recorded on POST /threads/{id}/search. The thread id is the path."""
+
+    q: str = Field(min_length=1, max_length=200)
+
+
 class JuniorSharedSearchHitOut(BaseModel):
     thread_id: uuid.UUID
     thread_title: str | None = None
