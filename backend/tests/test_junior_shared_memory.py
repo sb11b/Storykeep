@@ -195,6 +195,17 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ).status_code,
             401,
         )
+        self.assertEqual(
+            client.get(f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}").status_code,
+            401,
+        )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}",
+                json={"status": "launched"},
+            ).status_code,
+            401,
+        )
 
     def test_demo_gets_403(self):
         app = _app(SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True))
@@ -224,6 +235,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", "/api/v1/junior/projects/storykeep/agents"),
             ("GET", f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}"),
+            ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}"),
             ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/memories/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/memories/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/search/{uuid.uuid4()}"),
@@ -1136,6 +1149,43 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertEqual(project_run.call_args.args[2], "storykeep")
         self.assertEqual(str(project_run.call_args.args[3]), str(run.id))
         self.assertEqual(project_run.call_args.kwargs["status_value"], "launched")
+
+        thread_id = uuid.uuid4()
+        threaded = SimpleNamespace(
+            id=run.id,
+            project_slug="storykeep",
+            prompt="Fix the memory API",
+            status="context_ready",
+            cursor_agent_id=None,
+            thread_id=thread_id,
+            created_at=now,
+        )
+        with patch("app.routers.junior_shared.store.thread_agent_owned", return_value=threaded) as owned_thread:
+            on_thread = TestClient(app).get(f"/api/v1/junior/threads/{thread_id}/agents/{run.id}")
+        self.assertEqual(on_thread.status_code, 200)
+        self.assertEqual(str(on_thread.json()["thread_id"]), str(thread_id))
+        self.assertEqual(str(owned_thread.call_args.args[2]), str(thread_id))
+        self.assertEqual(str(owned_thread.call_args.args[3]), str(run.id))
+
+        moved = SimpleNamespace(
+            id=run.id,
+            project_slug="storykeep",
+            prompt="Keep going",
+            status="launched",
+            cursor_agent_id="bc-thread",
+            thread_id=thread_id,
+            created_at=now,
+        )
+        with patch("app.routers.junior_shared.store.update_thread_agent", return_value=moved) as thread_run:
+            thread_changed = TestClient(app).post(
+                f"/api/v1/junior/threads/{thread_id}/agents/{run.id}",
+                json={"status": "launched", "prompt": "Keep going"},
+            )
+        self.assertEqual(thread_changed.status_code, 200)
+        self.assertEqual(thread_changed.json()["status"], "launched")
+        self.assertEqual(str(thread_run.call_args.args[2]), str(thread_id))
+        self.assertEqual(str(thread_run.call_args.args[3]), str(run.id))
+        self.assertEqual(thread_run.call_args.kwargs["status_value"], "launched")
 
     def test_invalid_slug(self):
         with self.assertRaises(HTTPException) as caught:

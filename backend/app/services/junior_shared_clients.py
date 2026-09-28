@@ -25,6 +25,7 @@ Failed project-agent updates replay on POST /projects/{slug}/agents/{id}. GET /p
 Failed thread-memory updates replay on POST /threads/{id}/memories/{id}. GET /threads/{id}/memories/{id} loads one memory on that thread.
 Failed project-agent launches replay on POST /projects/{slug}/agents. GET /projects/{slug}/agents pages agent runs on that project.
 Failed thread-memory creates replay on POST /threads/{id}/memories. GET /threads/{id}/memories pages memories on that thread.
+Failed thread-agent updates replay on POST /threads/{id}/agents/{id}. GET /threads/{id}/agents/{id} loads one agent run on that thread.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-thread-memories-page-v1"
+HEALTH_STAMP = "junior-client-thread-agent-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -100,6 +101,8 @@ def _is_thread_update_path(path: str) -> bool:
         or "/continue" in cleaned
         or "/memories/" in cleaned
         or cleaned.endswith("/memories")
+        or "/agents/" in cleaned
+        or cleaned.endswith("/agents")
     ):
         return False
     return "/threads/" in cleaned
@@ -154,6 +157,11 @@ def _is_message_update_path(path: str) -> bool:
     return "/messages/" in cleaned
 
 
+def _is_thread_agent_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/threads/" in cleaned and "/agents/" in cleaned
+
+
 def _is_project_agent_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     return "/projects/" in cleaned and "/agents/" in cleaned
@@ -163,7 +171,7 @@ def _is_agent_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     if cleaned.endswith("/agents"):
         return False
-    if "/projects/" in cleaned:
+    if "/projects/" in cleaned or "/threads/" in cleaned:
         return False
     return "/agents/" in cleaned
 
@@ -378,6 +386,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if "/continue" in path:
             return "continue"
+        if _is_thread_agent_update_path(path):
+            return "thread_agent_update"
         if _is_thread_memory_update_path(path):
             return "thread_memory_update"
         if _is_thread_memory_create_path(path):
@@ -445,6 +455,18 @@ class SharedMemoryClient:
                 thread_id=thread_id,
                 q=post.get("q"),
             )
+        if kind == "thread_agent_update" and thread_id:
+            run_id = post.get("id") or post.get("run_id")
+            if run_id:
+                return self.update_thread_agent(
+                    thread_id,
+                    run_id,
+                    prompt=str(post.get("prompt") or text) or None,
+                    status=post.get("status"),
+                    cursor_agent_id=post.get("cursor_agent_id"),
+                    linked_thread_id=post.get("linked_thread_id"),
+                    meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+                )
         if kind == "project_agent_update":
             run_id = post.get("id") or post.get("run_id")
             if run_id:
@@ -576,6 +598,8 @@ class SharedMemoryClient:
             return
         if "/continue" in path:
             kind = "continue"
+        elif _is_thread_agent_update_path(path):
+            kind = "thread_agent_update"
         elif _is_thread_memory_update_path(path):
             kind = "thread_memory_update"
         elif _is_thread_memory_create_path(path):
@@ -639,8 +663,11 @@ class SharedMemoryClient:
             "project_slug": body.get("project_slug"),
             "q": body.get("q"),
             "cursor_agent_id": body.get("cursor_agent_id"),
+            "linked_thread_id": body.get("linked_thread_id"),
             "id": body.get("id"),
-            "run_id": body.get("id") if kind in {"agent_update", "project_agent_update"} else None,
+            "run_id": body.get("id")
+            if kind in {"agent_update", "project_agent_update", "thread_agent_update"}
+            else None,
             "memory_id": body.get("id"),
             "memory_kind": body.get("kind")
             if kind in {"memory", "memory_update", "thread_memory", "thread_memory_update"}
@@ -1090,6 +1117,52 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/threads/{thread_id}/memories",
             action="save this thread memory",
+            body=body,
+            json=json_body,
+        )
+
+    def get_thread_agent(self, thread_id: UUID | str, run_id: UUID | str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/threads/{thread_id}/agents/{run_id}",
+            action="load this thread agent",
+        )
+
+    def update_thread_agent(
+        self,
+        thread_id: UUID | str,
+        run_id: UUID | str,
+        *,
+        prompt: str | None = None,
+        status: str | None = None,
+        cursor_agent_id: str | None = None,
+        linked_thread_id: UUID | str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "id": str(run_id),
+            "thread_id": str(thread_id),
+            "run_id": str(run_id),
+        }
+        json_body: dict[str, Any] = {}
+        if prompt is not None:
+            body["prompt"] = prompt
+            json_body["prompt"] = prompt
+        if status is not None:
+            body["status"] = status
+            json_body["status"] = status
+        if cursor_agent_id is not None:
+            body["cursor_agent_id"] = cursor_agent_id
+            json_body["cursor_agent_id"] = cursor_agent_id
+        if linked_thread_id is not None:
+            body["linked_thread_id"] = str(linked_thread_id)
+            json_body["thread_id"] = str(linked_thread_id)
+        if meta is not None:
+            body["meta"] = meta
+            json_body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/threads/{thread_id}/agents/{run_id}",
+            action="update this thread agent",
             body=body,
             json=json_body,
         )
