@@ -109,8 +109,8 @@ def _windows(http):
 
 
 class SharedClientSmokeTests(unittest.TestCase):
-    def test_health_stamp_is_continue_get_v1(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-thread-search-get-v1")
+    def test_health_stamp_matches_build(self):
+        self.assertEqual(HEALTH_STAMP, "junior-bugbot-pr-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )

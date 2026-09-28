@@ -524,7 +524,7 @@ class CursorStartPayloadTests(unittest.TestCase):
         self.assertTrue(start_agent.called)
         self.assertIn("Sequenced #28", start_agent.call_args.args[0])
         self.assertEqual(start_agent.call_args.kwargs["branch"], "main")
-        self.assertFalse(start_agent.call_args.kwargs["auto_create_pr"])
+        self.assertTrue(start_agent.call_args.kwargs["auto_create_pr"])
 
     def test_sequence_number_five_starts_agent(self):
         from app.services import cursor_agent_tool

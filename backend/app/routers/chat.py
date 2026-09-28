@@ -1629,11 +1629,7 @@ def _chat(
                             task_prompt,
                             branch=start_branch,
                             source_message=agent_source,
-                            auto_create_pr=(
-                                False
-                                if cursor_agent_tool.next_step_task(user_text)
-                                else (True if delegate_turn else None)
-                            ),
+                            auto_create_pr=True if delegate_turn else None,
                         )
                     )
                     while not start_task.done():
