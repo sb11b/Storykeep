@@ -149,6 +149,8 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/threads/{id}/memories` | Save a memory on that thread |
 | `GET` | `/api/v1/junior/threads/{id}/memories/{id}` | One memory sourced from that thread |
 | `POST` | `/api/v1/junior/threads/{id}/memories/{id}` | Update that memory (404 if missing or sourced from another thread) |
+| `GET` | `/api/v1/junior/threads/{id}/agents` | Agent runs recorded on that thread (`limit`, `cursor` or `before_id`; 404 if the thread is missing) |
+| `POST` | `/api/v1/junior/threads/{id}/agents` | Record a launch on that thread (`context_ready`); does not call Cursor |
 | `GET` | `/api/v1/junior/threads/{id}/agents/{id}` | One agent run on that thread |
 | `POST` | `/api/v1/junior/threads/{id}/agents/{id}` | Update that agent run (404 if missing or on another thread) |
 | `GET` | `/api/v1/junior/projects` | List project registry (`limit`, `cursor` or `before_id`) |

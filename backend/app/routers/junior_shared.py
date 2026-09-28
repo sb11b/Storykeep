@@ -14,6 +14,7 @@ from app.schemas import (
     JuniorAgentLaunchIn,
     JuniorAgentLaunchOut,
     JuniorProjectAgentLaunchIn,
+    JuniorThreadAgentLaunchIn,
     JuniorAgentRunIn,
     JuniorAgentRunOut,
     JuniorProjectIn,
@@ -355,6 +356,50 @@ def update_thread_memory(
     db.commit()
     db.refresh(row)
     return JuniorSharedMemoryOut.model_validate(row)
+
+
+@router.get("/threads/{thread_id}/agents", response_model=list[JuniorAgentRunOut])
+def list_thread_agents(
+    thread_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorAgentRunOut]:
+    store.thread_owned(db, user, thread_id)
+    rows, next_cursor = store.list_agent_runs_page(
+        db, user, limit=limit, cursor=cursor, before_id=before_id, thread_id=thread_id
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorAgentRunOut.model_validate(row) for row in rows]
+
+
+@router.post("/threads/{thread_id}/agents", response_model=JuniorAgentLaunchOut)
+def launch_thread_agent(
+    thread_id: UUID,
+    payload: JuniorThreadAgentLaunchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentLaunchOut:
+    """Record a launch on this thread. Does not call Cursor. Replay stays on this route."""
+    store.thread_owned(db, user, thread_id)
+    run, pack = store.record_agent_run(
+        db,
+        user,
+        project_slug=payload.project_slug,
+        prompt=payload.prompt,
+        thread_id=thread_id,
+        query=payload.q,
+    )
+    db.commit()
+    db.refresh(run)
+    return JuniorAgentLaunchOut(
+        run=JuniorAgentRunOut.model_validate(run),
+        context=_context_out(pack),
+        called_cursor_api=False,
+    )
 
 
 @router.get("/threads/{thread_id}/agents/{run_id}", response_model=JuniorAgentRunOut)

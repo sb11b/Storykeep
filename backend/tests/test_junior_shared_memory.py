@@ -195,14 +195,26 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ).status_code,
             401,
         )
+        thread_for_agents = uuid.uuid4()
         self.assertEqual(
-            client.get(f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}").status_code,
+            client.get(f"/api/v1/junior/threads/{thread_for_agents}/agents/{uuid.uuid4()}").status_code,
             401,
         )
         self.assertEqual(
             client.post(
-                f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}",
+                f"/api/v1/junior/threads/{thread_for_agents}/agents/{uuid.uuid4()}",
                 json={"status": "launched"},
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            client.get(f"/api/v1/junior/threads/{thread_for_agents}/agents").status_code,
+            401,
+        )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/threads/{thread_for_agents}/agents",
+                json={"prompt": "Fix the memory API", "project_slug": "storykeep"},
             ).status_code,
             401,
         )
@@ -237,6 +249,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}"),
             ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}"),
+            ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/agents"),
+            ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/agents"),
             ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/memories/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/memories/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/search/{uuid.uuid4()}"),
@@ -1186,6 +1200,34 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertEqual(str(thread_run.call_args.args[2]), str(thread_id))
         self.assertEqual(str(thread_run.call_args.args[3]), str(run.id))
         self.assertEqual(thread_run.call_args.kwargs["status_value"], "launched")
+
+        with patch(
+            "app.routers.junior_shared.store.list_agent_runs_page",
+            return_value=([threaded], str(threaded.id)),
+        ) as thread_page, patch("app.routers.junior_shared.store.thread_owned", return_value=object()):
+            thread_list = TestClient(app).get(
+                f"/api/v1/junior/threads/{thread_id}/agents",
+                params={"limit": 1, "cursor": str(threaded.id)},
+            )
+        self.assertEqual(thread_list.status_code, 200)
+        self.assertEqual(thread_list.json()[0]["project_slug"], "storykeep")
+        self.assertEqual(thread_list.headers.get("x-next-cursor"), str(threaded.id))
+        self.assertEqual(str(thread_page.call_args.kwargs["thread_id"]), str(thread_id))
+        self.assertEqual(thread_page.call_args.kwargs["limit"], 1)
+
+        with patch("app.routers.junior_shared.store.record_agent_run", return_value=(threaded, pack)) as recorded_thread, patch(
+            "app.routers.junior_shared.store.thread_owned", return_value=object()
+        ):
+            thread_launch = TestClient(app).post(
+                f"/api/v1/junior/threads/{thread_id}/agents",
+                json={"prompt": "Fix the memory API", "project_slug": "storykeep"},
+            )
+        self.assertEqual(thread_launch.status_code, 200)
+        self.assertEqual(thread_launch.json()["run"]["status"], "context_ready")
+        self.assertFalse(thread_launch.json()["called_cursor_api"])
+        self.assertEqual(recorded_thread.call_args.kwargs["project_slug"], "storykeep")
+        self.assertEqual(recorded_thread.call_args.kwargs["prompt"], "Fix the memory API")
+        self.assertEqual(str(recorded_thread.call_args.kwargs["thread_id"]), str(thread_id))
 
     def test_invalid_slug(self):
         with self.assertRaises(HTTPException) as caught:

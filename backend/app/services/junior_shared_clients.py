@@ -26,6 +26,7 @@ Failed thread-memory updates replay on POST /threads/{id}/memories/{id}. GET /th
 Failed project-agent launches replay on POST /projects/{slug}/agents. GET /projects/{slug}/agents pages agent runs on that project.
 Failed thread-memory creates replay on POST /threads/{id}/memories. GET /threads/{id}/memories pages memories on that thread.
 Failed thread-agent updates replay on POST /threads/{id}/agents/{id}. GET /threads/{id}/agents/{id} loads one agent run on that thread.
+Failed thread-agent launches replay on POST /threads/{id}/agents. GET /threads/{id}/agents pages agent runs on that thread.
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-thread-agent-get-v1"
+HEALTH_STAMP = "junior-client-thread-agents-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -160,6 +161,11 @@ def _is_message_update_path(path: str) -> bool:
 def _is_thread_agent_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     return "/threads/" in cleaned and "/agents/" in cleaned
+
+
+def _is_thread_agent_create_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/threads/" in cleaned and cleaned.endswith("/agents")
 
 
 def _is_project_agent_update_path(path: str) -> bool:
@@ -392,6 +398,8 @@ class SharedMemoryClient:
             return "thread_memory_update"
         if _is_thread_memory_create_path(path):
             return "thread_memory"
+        if _is_thread_agent_create_path(path):
+            return "thread_agent"
         if _is_project_agent_update_path(path):
             return "project_agent_update"
         if _is_project_agent_create_path(path):
@@ -453,6 +461,13 @@ class SharedMemoryClient:
                 str(post.get("prompt") or text),
                 slug=str(post.get("slug") or post.get("project_slug") or self.project_slug),
                 thread_id=thread_id,
+                q=post.get("q"),
+            )
+        if kind == "thread_agent" and thread_id:
+            return self.launch_thread_agent(
+                str(post.get("prompt") or text),
+                thread_id,
+                project_slug=str(post.get("project_slug") or post.get("slug") or self.project_slug),
                 q=post.get("q"),
             )
         if kind == "thread_agent_update" and thread_id:
@@ -604,6 +619,8 @@ class SharedMemoryClient:
             kind = "thread_memory_update"
         elif _is_thread_memory_create_path(path):
             kind = "thread_memory"
+        elif _is_thread_agent_create_path(path):
+            kind = "thread_agent"
         elif _is_project_agent_update_path(path):
             kind = "project_agent_update"
         elif _is_project_agent_create_path(path):
@@ -1117,6 +1134,48 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/threads/{thread_id}/memories",
             action="save this thread memory",
+            body=body,
+            json=json_body,
+        )
+
+    def get_thread_agents(
+        self,
+        thread_id: UUID | str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/threads/{thread_id}/agents",
+            action="load these thread agents",
+            **({"params": params} if params else {}),
+        )
+
+    def launch_thread_agent(
+        self,
+        prompt: str,
+        thread_id: UUID | str,
+        *,
+        project_slug: str | None = None,
+        q: str | None = None,
+    ) -> Any:
+        target = project_slug or self.project_slug
+        body: dict[str, Any] = {
+            "prompt": prompt,
+            "thread_id": str(thread_id),
+            "project_slug": target,
+            "slug": target,
+        }
+        json_body: dict[str, Any] = {"prompt": prompt, "project_slug": target}
+        if q:
+            body["q"] = q
+            json_body["q"] = q
+        return self._write(
+            "post",
+            f"{API_PREFIX}/threads/{thread_id}/agents",
+            action="record this thread agent",
             body=body,
             json=json_body,
         )

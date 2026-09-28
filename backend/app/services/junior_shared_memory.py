@@ -1377,12 +1377,16 @@ def list_agent_runs_page(
     cursor: UUID | str | None = None,
     before_id: UUID | str | None = None,
     project_slug: str | None = None,
+    thread_id: UUID | str | None = None,
 ) -> tuple[list[JuniorAgentRun], str | None]:
     cap = clamp_page_limit(limit)
     stmt = select(JuniorAgentRun).where(JuniorAgentRun.user_id == user.id)
     slug = (project_slug or "").strip().lower()
     if slug:
         stmt = stmt.where(JuniorAgentRun.project_slug == normalize_slug(slug))
+    thread_filter = _as_uuid(thread_id) if thread_id is not None else None
+    if thread_filter is not None:
+        stmt = stmt.where(JuniorAgentRun.thread_id == thread_filter)
     marker = _as_uuid(before_id) or _as_uuid(cursor)
     if marker is not None:
         ref = db.scalar(

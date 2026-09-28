@@ -110,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_is_continue_get_v1(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-thread-agent-get-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-thread-agents-page-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -142,6 +142,7 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertTrue(any(path.endswith("/threads/{thread_id}/continue") for path in junior))
         self.assertTrue(any(path.endswith("/threads/{thread_id}/memories/{memory_id}") for path in junior))
         self.assertTrue(any(path.endswith("/threads/{thread_id}/agents/{run_id}") for path in junior))
+        self.assertTrue(any(path.endswith("/threads/{thread_id}/agents") for path in junior))
 
     def test_phone_and_windows_require_login(self):
         client = TestClient(_app())
@@ -257,6 +258,11 @@ class SharedClientSmokeTests(unittest.TestCase):
             _phone(client).get_thread_agent(uuid.uuid4(), uuid.uuid4())
         self.assertEqual(thread_agent.exception.status_code, 401)
         self.assertIn("did not load this thread agent", thread_agent.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as thread_agents:
+            _windows(client).get_thread_agents(uuid.uuid4())
+        self.assertEqual(thread_agents.exception.status_code, 401)
+        self.assertIn("did not load these thread agents", thread_agents.exception.user_message)
 
     def test_demo_is_forbidden_for_both_clients(self):
         demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
@@ -425,6 +431,16 @@ class SharedClientSmokeTests(unittest.TestCase):
             _phone(client).update_thread_agent(uuid.uuid4(), uuid.uuid4(), status="launched")
         self.assertEqual(thread_agent_updated.exception.status_code, 403)
         self.assertIn("did not update this thread agent", thread_agent_updated.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as thread_agents:
+            _windows(client).get_thread_agents(uuid.uuid4())
+        self.assertEqual(thread_agents.exception.status_code, 403)
+        self.assertIn("did not load these thread agents", thread_agents.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as thread_agent_launched:
+            _phone(client).launch_thread_agent("Fix the memory API", uuid.uuid4(), project_slug="storykeep")
+        self.assertEqual(thread_agent_launched.exception.status_code, 403)
+        self.assertIn("did not record this thread agent", thread_agent_launched.exception.user_message)
 
     def test_phone_posts_on_the_shared_messages_route(self):
         thread, user_msg = _turn("phone")
@@ -1402,6 +1418,46 @@ class SharedClientSmokeTests(unittest.TestCase):
         )
         self.assertNotIn(("POST", f"/api/v1/junior/agents/{run_id}"), replay_http.calls)
         self.assertFalse(any("/projects/" in call[1] for call in replay_http.calls))
+        self.assertFalse(path.exists())
+
+    def test_thread_agents_page_403_and_launch_replays(self):
+        thread_id = uuid.uuid4()
+        http = _ScriptedHttp([200, 403, 403, 403])
+        page = _phone(http).get_thread_agents(thread_id, limit=2, cursor="abc")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(http.calls[0], ("GET", f"/api/v1/junior/threads/{thread_id}/agents"))
+        self.assertEqual(http.params[0], {"limit": 2, "cursor": "abc"})
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_thread_agents(thread_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load these thread agents", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as launched:
+                phone_client(fail, queue_path=path).launch_thread_agent(
+                    "Fix the memory API", thread_id, project_slug="storykeep"
+                )
+        self.assertIn("did not record this thread agent", launched.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "thread_agent")
+        self.assertEqual(restarted.last_failed_post["prompt"], "Fix the memory API")
+        self.assertEqual(restarted.last_failed_post["thread_id"], str(thread_id))
+        self.assertEqual(restarted.last_failed_post["project_slug"], "storykeep")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/threads/{thread_id}/agents")],
+        )
+        self.assertEqual(replay_http.json_bodies[0]["prompt"], "Fix the memory API")
+        self.assertEqual(replay_http.json_bodies[0]["project_slug"], "storykeep")
+        self.assertNotIn(("POST", "/api/v1/junior/agents"), replay_http.calls)
+        self.assertNotIn(("POST", "/api/v1/junior/projects/storykeep/agents"), replay_http.calls)
         self.assertFalse(path.exists())
 
 
