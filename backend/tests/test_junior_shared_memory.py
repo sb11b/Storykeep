@@ -561,6 +561,31 @@ class JuniorSharedRouteTests(unittest.TestCase):
         self.assertEqual(str(thread_updated.call_args.args[3]), str(fact.id))
         self.assertEqual(thread_updated.call_args.kwargs["content"], "Prefers shorter replies")
 
+        with patch(
+            "app.routers.junior_shared.store.list_memories_page",
+            return_value=([scoped], str(fact.id)),
+        ) as listed, patch("app.routers.junior_shared.store.thread_owned", return_value=SimpleNamespace(id=thread_id)):
+            page = TestClient(app).get(
+                f"/api/v1/junior/threads/{thread_id}/memories",
+                params={"limit": 1, "cursor": str(fact.id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["content"], "Prefers shorter replies")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(fact.id))
+        self.assertEqual(listed.call_args.kwargs["source_thread"], thread_id)
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+
+        with patch("app.routers.junior_shared.store.create_thread_memory", return_value=scoped) as created:
+            saved = TestClient(app).post(
+                f"/api/v1/junior/threads/{thread_id}/memories",
+                json={"content": "Prefers shorter replies", "kind": "note", "source_thread": str(uuid.uuid4())},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["content"], "Prefers shorter replies")
+        self.assertEqual(created.call_args.args[2], thread_id)
+        self.assertEqual(created.call_args.kwargs["content"], "Prefers shorter replies")
+        self.assertEqual(created.call_args.kwargs["kind"], "note")
+
 
 class JuniorSharedServiceTests(unittest.TestCase):
     def test_invalid_venue_and_kind(self):
