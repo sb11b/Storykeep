@@ -553,6 +553,45 @@ def get_project(
     return JuniorProjectOut.model_validate(store.get_project(db, user, slug))
 
 
+@router.get("/projects/{slug}/agents/{run_id}", response_model=JuniorAgentRunOut)
+def get_project_agent(
+    slug: str,
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentRunOut:
+    return JuniorAgentRunOut.model_validate(store.project_agent_owned(db, user, slug, run_id))
+
+
+@router.post("/projects/{slug}/agents/{run_id}", response_model=JuniorAgentRunOut)
+def update_project_agent(
+    slug: str,
+    run_id: UUID,
+    payload: JuniorAgentRunIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentRunOut:
+    fields = payload.model_fields_set
+    row = store.update_project_agent(
+        db,
+        user,
+        slug,
+        run_id,
+        prompt=payload.prompt,
+        status_value=payload.status if "status" in fields else None,
+        cursor_agent_id=payload.cursor_agent_id if "cursor_agent_id" in fields else None,
+        thread_id=payload.thread_id if "thread_id" in fields else None,
+        meta=payload.meta if "meta" in fields else None,
+        set_status="status" in fields,
+        set_cursor_agent_id="cursor_agent_id" in fields,
+        set_thread_id="thread_id" in fields,
+        set_meta="meta" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorAgentRunOut.model_validate(row)
+
+
 @router.post("/projects/{slug}", response_model=JuniorProjectOut)
 def update_project(
     slug: str,

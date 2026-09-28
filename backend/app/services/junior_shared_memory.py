@@ -1177,6 +1177,14 @@ def update_agent_context(
     )
 
 
+def project_agent_owned(db: Session, user: User, slug: str, run_id: UUID) -> JuniorAgentRun:
+    project = get_project(db, user, slug)
+    row = agent_run_owned(db, user, run_id)
+    if row.project_slug != project.slug:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return row
+
+
 def agent_run_owned(db: Session, user: User, run_id: UUID) -> JuniorAgentRun:
     row = db.get(JuniorAgentRun, run_id)
     if row is None or row.user_id != user.id:
@@ -1222,6 +1230,39 @@ def update_agent_run(
         row.meta = meta
     db.flush()
     return row
+
+
+def update_project_agent(
+    db: Session,
+    user: User,
+    slug: str,
+    run_id: UUID,
+    *,
+    prompt: str | None = None,
+    status_value: str | None = None,
+    cursor_agent_id: str | None = None,
+    thread_id: UUID | None = None,
+    meta: dict[str, Any] | None = None,
+    set_status: bool = False,
+    set_cursor_agent_id: bool = False,
+    set_thread_id: bool = False,
+    set_meta: bool = False,
+) -> JuniorAgentRun:
+    project_agent_owned(db, user, slug, run_id)
+    return update_agent_run(
+        db,
+        user,
+        run_id,
+        prompt=prompt,
+        status_value=status_value,
+        cursor_agent_id=cursor_agent_id,
+        thread_id=thread_id,
+        meta=meta,
+        set_status=set_status,
+        set_cursor_agent_id=set_cursor_agent_id,
+        set_thread_id=set_thread_id,
+        set_meta=set_meta,
+    )
 
 
 def list_agent_runs(db: Session, user: User) -> list[JuniorAgentRun]:
