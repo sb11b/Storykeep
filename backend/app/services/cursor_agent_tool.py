@@ -276,10 +276,12 @@ _NUM_WORDS = {
     "twenty": 20,
     "twenty-one": 21,
     "twenty-two": 22,
+    "twenty-three": 23,
+    "twenty-four": 24,
 }
 _SEQ_MENTION_RE = re.compile(
     r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*"
-    r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty-two|twenty-one|twenty)\b"
+    r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty-four|twenty-three|twenty-two|twenty-one|twenty)\b"
     r"|\b(?:sequenced\s+)?#\s*(\d+)\b",
     re.I,
 )
@@ -288,9 +290,33 @@ _NEXT_STEP_RE = re.compile(
     r"|\bgo ahead and (?:send|start)\b"
     r"|\bmove on to the (?:next|nest) step\b"
     r"|\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*"
-    r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty-two|twenty-one|twenty)\b",
+    r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty-four|twenty-three|twenty-two|twenty-one|twenty)\b",
     re.I,
 )
+
+SEQ_23_TASK = """Sequenced #23 — next after junior-client-thread-memory-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, or #22).
+
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #22 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+
+Already done on main:
+- Phone and Windows clients POST /threads/{id}/memories/{id}; failed updates replay on that route
+- GET /threads/{id}/memories/{id} loads one memory on that thread
+- POST /projects/{slug}/agents/{id} and GET /projects/{slug}/agents/{id} already exist
+- require_user; demo 403; no new public routes
+- Health stamp junior-client-thread-memory-get-v1
+
+Your job (#23):
+1. Both clients POST /projects/{slug}/agents to record an agent launch on that project. Failed writes stay on the FIFO and replay on that same route (not POST /agents). Same auth rule. No silent drop.
+2. Add GET /projects/{slug}/agents to page agent runs on that project (limit/cursor or before_id). Same require_user rules. 404 if the project is missing. Still no public routes.
+3. Both clients call GET /projects/{slug}/agents (same auth).
+4. Keep SQL idempotent; no DROP TABLE. No new public routes.
+5. Extend smoke tests for project-agent-launch replay, project-agents page GET, and 403. Keep existing tests green.
+6. Health stamp: junior-client-project-agents-page-v1
+7. Commit on a cursor/* branch and push that branch only.
+
+Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
+"""
+
 
 SEQ_22_TASK = """Sequenced #22 — next after junior-client-project-agent-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, or #21).
 
@@ -303,12 +329,12 @@ Already done on main:
 - Health stamp junior-client-project-agent-get-v1
 
 Your job (#22):
-1. Both clients POST /projects/{slug}/agents to record an agent launch on that project. Failed writes stay on the FIFO and replay on that same route (not POST /agents). Same auth rule. No silent drop.
-2. Add GET /projects/{slug}/agents to page agent runs on that project (limit/cursor or before_id). Same require_user rules. 404 if the project is missing. Still no public routes.
-3. Both clients call GET /projects/{slug}/agents (same auth).
+1. Both clients POST /threads/{id}/memories/{id} to update a memory on that thread. Failed writes stay on the FIFO and replay on that same route (not POST /memories/{id}). Same auth rule. No silent drop.
+2. Add GET /threads/{id}/memories/{id} for one memory on that thread. Same require_user rules. Still no public routes.
+3. Both clients call GET /threads/{id}/memories/{id} (same auth).
 4. Keep SQL idempotent; no DROP TABLE. No new public routes.
-5. Extend smoke tests for project-agent-launch replay, project-agents page GET, and 403. Keep existing tests green.
-6. Health stamp: junior-client-project-agents-page-v1
+5. Extend smoke tests for thread-memory-update replay, thread-memory GET, and 403. Keep existing tests green.
+6. Health stamp: junior-client-thread-memory-get-v1
 7. Commit on a cursor/* branch and push that branch only.
 
 Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
@@ -781,7 +807,7 @@ def _later_sequence_task(number: int, message: str) -> str:
     return (
         f"Sequenced #{number} on GitHub main of sb11b/Storykeep- (StoryKeep). "
         "Steve asked to start this sequence. Do not refuse. Do not ask him to define it. "
-        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, or #22. "
+        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, or #23. "
         "Do not merge steve-bitsko Cursor PR #2. Do not change the owner email. "
         "Do not git-push to main. Do not re-run SQL. Do not open a pull request. "
         "Commit on a cursor/* branch and push that branch only.\n\n"
@@ -830,14 +856,16 @@ def next_step_task(message: str) -> str | None:
         return SEQ_21_TASK
     if number == 22:
         return SEQ_22_TASK
-    if number is not None and number > 22:
+    if number == 23:
+        return SEQ_23_TASK
+    if number is not None and number > 23:
         return _later_sequence_task(number, text)
     if number == 2:
         return None
     for match in _NEXT_STEP_RE.finditer(text):
         if _negated_at(text, match.start()):
             continue
-        return _later_sequence_task(23, text)
+        return _later_sequence_task(24, text)
     return None
 
 

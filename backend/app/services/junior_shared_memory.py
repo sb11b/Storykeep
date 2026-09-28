@@ -149,6 +149,16 @@ def memory_owned(db: Session, user: User, memory_id: UUID) -> JuniorMemoryFact:
     return row
 
 
+def thread_memory_owned(
+    db: Session, user: User, thread_id: UUID, memory_id: UUID
+) -> JuniorMemoryFact:
+    thread_owned(db, user, thread_id)
+    row = memory_owned(db, user, memory_id)
+    if row.source_thread != thread_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    return row
+
+
 def session_owned(db: Session, user: User, session_id: UUID) -> JuniorSession:
     row = db.get(JuniorSession, session_id)
     if row is None or row.user_id != user.id:
@@ -923,6 +933,31 @@ def upsert_memory(
     db.add(row)
     db.flush()
     return row
+
+
+def update_thread_memory(
+    db: Session,
+    user: User,
+    thread_id: UUID,
+    memory_id: UUID,
+    *,
+    content: str | None = None,
+    kind: str | None = None,
+    source_thread: UUID | None = None,
+    set_kind: bool = False,
+    set_source_thread: bool = False,
+) -> JuniorMemoryFact:
+    thread_memory_owned(db, user, thread_id, memory_id)
+    return update_memory(
+        db,
+        user,
+        memory_id,
+        content=content,
+        kind=kind,
+        source_thread=source_thread,
+        set_kind=set_kind,
+        set_source_thread=set_source_thread,
+    )
 
 
 def update_memory(
