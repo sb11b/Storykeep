@@ -166,6 +166,16 @@ def message_owned(db: Session, user: User, message_id: UUID) -> JuniorThreadMess
     return row
 
 
+def thread_message_owned(
+    db: Session, user: User, thread_id: UUID, message_id: UUID
+) -> JuniorThreadMessage:
+    thread_owned(db, user, thread_id)
+    row = message_owned(db, user, message_id)
+    if row.thread_id != thread_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    return row
+
+
 def update_message(
     db: Session,
     user: User,
@@ -1106,6 +1116,40 @@ def build_agent_context(
         "search_hits": hits,
         "launch_hint": launch_hint(project),
     }
+
+
+def update_agent_context(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    query: str | None = None,
+    thread_id: UUID | None = None,
+    set_query: bool = False,
+    set_thread_id: bool = False,
+) -> dict[str, Any]:
+    project = get_project(db, user, slug)
+    meta = dict(project.meta or {})
+    if set_query:
+        cleaned = (query or "").strip()[:200]
+        if cleaned:
+            meta["context_q"] = cleaned
+        else:
+            meta.pop("context_q", None)
+    if set_thread_id:
+        if thread_id is not None:
+            thread_owned(db, user, thread_id)
+            meta["context_thread_id"] = str(thread_id)
+        else:
+            meta.pop("context_thread_id", None)
+    project.meta = meta
+    project.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    stored_q = str(meta.get("context_q") or "").strip() or None
+    stored_thread = _as_uuid(meta.get("context_thread_id"))
+    return build_agent_context(
+        db, user, project_slug=slug, query=stored_q, thread_id=stored_thread
+    )
 
 
 def agent_run_owned(db: Session, user: User, run_id: UUID) -> JuniorAgentRun:

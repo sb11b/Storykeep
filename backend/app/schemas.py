@@ -918,6 +918,11 @@ class JuniorProjectOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JuniorAgentContextIn(BaseModel):
+    q: str | None = Field(default=None, max_length=200)
+    thread_id: uuid.UUID | None = None
+
+
 class JuniorAgentContextOut(BaseModel):
     project: JuniorProjectOut
     thread_summary: str | None = None

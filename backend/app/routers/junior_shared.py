@@ -9,6 +9,7 @@ from app.database import get_db
 from app.deps import require_user
 from app.models import User
 from app.schemas import (
+    JuniorAgentContextIn,
     JuniorAgentContextOut,
     JuniorAgentLaunchIn,
     JuniorAgentLaunchOut,
@@ -139,6 +140,18 @@ def list_messages(
     )
     _page_headers(response, next_cursor)
     return [JuniorSharedMessageOut.model_validate(row) for row in rows]
+
+
+@router.get("/threads/{thread_id}/messages/{message_id}", response_model=JuniorSharedMessageOut)
+def get_thread_message(
+    thread_id: UUID,
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    return JuniorSharedMessageOut.model_validate(
+        store.thread_message_owned(db, user, thread_id, message_id)
+    )
 
 
 @router.post("/threads/{thread_id}/messages", response_model=JuniorSharedMessagePostOut)
@@ -614,6 +627,28 @@ def get_agent_context(
     user: User = Depends(require_user),
 ) -> JuniorAgentContextOut:
     pack = store.build_agent_context(db, user, project_slug=slug, query=q, thread_id=thread_id)
+    return _context_out(pack)
+
+
+@router.post("/agent-context/{slug}", response_model=JuniorAgentContextOut)
+def update_agent_context(
+    slug: str,
+    payload: JuniorAgentContextIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentContextOut:
+    incoming = payload or JuniorAgentContextIn()
+    fields = incoming.model_fields_set
+    pack = store.update_agent_context(
+        db,
+        user,
+        slug,
+        query=incoming.q if "q" in fields else None,
+        thread_id=incoming.thread_id if "thread_id" in fields else None,
+        set_query="q" in fields,
+        set_thread_id="thread_id" in fields,
+    )
+    db.commit()
     return _context_out(pack)
 
 

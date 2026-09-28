@@ -129,6 +129,7 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `GET` | `/api/v1/junior/threads/{id}` | One thread the signed-in user owns |
 | `POST` | `/api/v1/junior/threads/{id}` | Update title/status (`open` / `archived`) |
 | `GET` | `/api/v1/junior/threads/{id}/messages` | Thread history (`limit`, `cursor` or `before_id`) |
+| `GET` | `/api/v1/junior/threads/{id}/messages/{id}` | One message in that thread |
 | `POST` | `/api/v1/junior/threads/{id}/messages` | Send a turn (`text` or `content`, `venue`, optional `meta`) |
 | `GET` | `/api/v1/junior/messages` | Recent messages for the signed-in user (same page params; optional `thread_id`) |
 | `GET` | `/api/v1/junior/messages/{id}` | One message the signed-in user owns |
@@ -148,6 +149,7 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/projects/{slug}` | Update an existing project (404 if missing) |
 | `GET` | `/api/v1/junior/agent-context?project=&q=` | Pack for a Cursor agent (project + thread + memories + search) |
 | `GET` | `/api/v1/junior/agent-context/{slug}` | One project context pack (`q` and `thread_id` optional) |
+| `POST` | `/api/v1/junior/agent-context/{slug}` | Pin query/thread on that pack (404 if the project is missing) |
 | `GET` | `/api/v1/junior/agents` | Agent-run list (`limit`, `cursor` or `before_id`; optional `project`) |
 | `GET` | `/api/v1/junior/agents/{id}` | One agent run the signed-in user owns |
 | `POST` | `/api/v1/junior/agents` | Record a launch (`context_ready`); does not call Cursor |
