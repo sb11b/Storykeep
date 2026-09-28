@@ -214,6 +214,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/continue"),
             ("GET", f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}"),
+            ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/memories/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/memories/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/search/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/sessions/{uuid.uuid4()}"),
@@ -519,6 +521,35 @@ class JuniorSharedRouteTests(unittest.TestCase):
         self.assertEqual(patched.status_code, 200)
         self.assertEqual(patched.json()["content"], "Prefers shorter replies")
         self.assertEqual(str(updated.call_args.args[2]), str(fact.id))
+
+        thread_id = uuid.uuid4()
+        scoped = SimpleNamespace(
+            id=fact.id,
+            kind="note",
+            content="Prefers shorter replies",
+            source_thread=thread_id,
+            created_at=now,
+            updated_at=now,
+        )
+        with patch("app.routers.junior_shared.store.thread_memory_owned", return_value=scoped) as owned_thread:
+            nested = TestClient(app).get(f"/api/v1/junior/threads/{thread_id}/memories/{fact.id}")
+        self.assertEqual(nested.status_code, 200)
+        self.assertEqual(nested.json()["content"], "Prefers shorter replies")
+        self.assertEqual(str(owned_thread.call_args.args[2]), str(thread_id))
+        self.assertEqual(str(owned_thread.call_args.args[3]), str(fact.id))
+
+        with patch(
+            "app.routers.junior_shared.store.update_thread_memory", return_value=scoped
+        ) as thread_updated:
+            changed = TestClient(app).post(
+                f"/api/v1/junior/threads/{thread_id}/memories/{fact.id}",
+                json={"content": "Prefers shorter replies", "kind": "note"},
+            )
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(changed.json()["content"], "Prefers shorter replies")
+        self.assertEqual(str(thread_updated.call_args.args[2]), str(thread_id))
+        self.assertEqual(str(thread_updated.call_args.args[3]), str(fact.id))
+        self.assertEqual(thread_updated.call_args.kwargs["content"], "Prefers shorter replies")
 
 
 class JuniorSharedServiceTests(unittest.TestCase):

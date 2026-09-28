@@ -145,6 +145,8 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `GET` | `/api/v1/junior/memories/{id}` | One memory the signed-in user owns |
 | `POST` | `/api/v1/junior/memories` | Add a fact, or update when `id` is set |
 | `POST` | `/api/v1/junior/memories/{id}` | Update an existing memory (404 if missing) |
+| `GET` | `/api/v1/junior/threads/{id}/memories/{id}` | One memory sourced from that thread |
+| `POST` | `/api/v1/junior/threads/{id}/memories/{id}` | Update that memory (404 if missing or sourced from another thread) |
 | `GET` | `/api/v1/junior/projects` | List project registry (`limit`, `cursor` or `before_id`) |
 | `GET` | `/api/v1/junior/projects/{slug}` | One project |
 | `POST` | `/api/v1/junior/projects` | Upsert by slug |
