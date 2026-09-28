@@ -176,6 +176,14 @@ class JuniorSharedRouteTests(unittest.TestCase):
             client.get(f"/api/v1/junior/threads/{uuid.uuid4()}/continue").status_code,
             401,
         )
+        self.assertEqual(client.get("/api/v1/junior/projects/storykeep/agents").status_code, 401)
+        self.assertEqual(
+            client.post(
+                "/api/v1/junior/projects/storykeep/agents",
+                json={"prompt": "Fix the memory API"},
+            ).status_code,
+            401,
+        )
         self.assertEqual(
             client.get(f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}").status_code,
             401,
@@ -212,6 +220,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/messages/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/messages/{uuid.uuid4()}"),
             ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/continue"),
+            ("GET", "/api/v1/junior/projects/storykeep/agents"),
+            ("POST", "/api/v1/junior/projects/storykeep/agents"),
             ("GET", f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/search/{uuid.uuid4()}"),
@@ -1025,6 +1035,31 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertEqual(patched.json()["cursor_agent_id"], "bc-test")
         self.assertEqual(str(updated.call_args.args[2]), str(run.id))
         self.assertEqual(updated.call_args.kwargs["status_value"], "launched")
+
+        with patch(
+            "app.routers.junior_shared.store.list_agent_runs_page",
+            return_value=([run], str(run.id)),
+        ) as project_page, patch("app.routers.junior_shared.store.get_project", return_value=project):
+            scoped_page = TestClient(app).get(
+                "/api/v1/junior/projects/storykeep/agents",
+                params={"limit": 1, "cursor": str(run.id)},
+            )
+        self.assertEqual(scoped_page.status_code, 200)
+        self.assertEqual(scoped_page.json()[0]["project_slug"], "storykeep")
+        self.assertEqual(scoped_page.headers.get("x-next-cursor"), str(run.id))
+        self.assertEqual(project_page.call_args.kwargs["project_slug"], "storykeep")
+        self.assertEqual(project_page.call_args.kwargs["limit"], 1)
+
+        with patch("app.routers.junior_shared.store.record_agent_run", return_value=(run, pack)) as recorded:
+            scoped_launch = TestClient(app).post(
+                "/api/v1/junior/projects/storykeep/agents",
+                json={"prompt": "Fix the memory API"},
+            )
+        self.assertEqual(scoped_launch.status_code, 200)
+        self.assertEqual(scoped_launch.json()["run"]["status"], "context_ready")
+        self.assertFalse(scoped_launch.json()["called_cursor_api"])
+        self.assertEqual(recorded.call_args.kwargs["project_slug"], "storykeep")
+        self.assertEqual(recorded.call_args.kwargs["prompt"], "Fix the memory API")
 
         with patch("app.routers.junior_shared.store.project_agent_owned", return_value=run) as owned_project:
             scoped = TestClient(app).get(f"/api/v1/junior/projects/storykeep/agents/{run.id}")

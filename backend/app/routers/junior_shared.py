@@ -13,6 +13,7 @@ from app.schemas import (
     JuniorAgentContextOut,
     JuniorAgentLaunchIn,
     JuniorAgentLaunchOut,
+    JuniorProjectAgentLaunchIn,
     JuniorAgentRunIn,
     JuniorAgentRunOut,
     JuniorProjectIn,
@@ -551,6 +552,49 @@ def get_project(
     user: User = Depends(require_user),
 ) -> JuniorProjectOut:
     return JuniorProjectOut.model_validate(store.get_project(db, user, slug))
+
+
+@router.get("/projects/{slug}/agents", response_model=list[JuniorAgentRunOut])
+def list_project_agents(
+    slug: str,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorAgentRunOut]:
+    store.get_project(db, user, slug)
+    rows, next_cursor = store.list_agent_runs_page(
+        db, user, limit=limit, cursor=cursor, before_id=before_id, project_slug=slug
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorAgentRunOut.model_validate(row) for row in rows]
+
+
+@router.post("/projects/{slug}/agents", response_model=JuniorAgentLaunchOut)
+def launch_project_agent(
+    slug: str,
+    payload: JuniorProjectAgentLaunchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentLaunchOut:
+    """Record a launch on this project. Does not call Cursor. Replay stays on this route."""
+    run, pack = store.record_agent_run(
+        db,
+        user,
+        project_slug=slug,
+        prompt=payload.prompt,
+        thread_id=payload.thread_id,
+        query=payload.q,
+    )
+    db.commit()
+    db.refresh(run)
+    return JuniorAgentLaunchOut(
+        run=JuniorAgentRunOut.model_validate(run),
+        context=_context_out(pack),
+        called_cursor_api=False,
+    )
 
 
 @router.get("/projects/{slug}/agents/{run_id}", response_model=JuniorAgentRunOut)

@@ -149,6 +149,8 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `GET` | `/api/v1/junior/projects/{slug}` | One project |
 | `POST` | `/api/v1/junior/projects` | Upsert by slug |
 | `POST` | `/api/v1/junior/projects/{slug}` | Update an existing project (404 if missing) |
+| `GET` | `/api/v1/junior/projects/{slug}/agents` | Agent runs on that project (`limit`, `cursor` or `before_id`; 404 if the project is missing) |
+| `POST` | `/api/v1/junior/projects/{slug}/agents` | Record a launch on that project (`context_ready`); does not call Cursor |
 | `GET` | `/api/v1/junior/projects/{slug}/agents/{id}` | One agent run on that project |
 | `POST` | `/api/v1/junior/projects/{slug}/agents/{id}` | Update that agent run (404 if missing or on another project) |
 | `GET` | `/api/v1/junior/agent-context?project=&q=` | Pack for a Cursor agent (project + thread + memories + search) |

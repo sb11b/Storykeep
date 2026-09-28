@@ -939,6 +939,14 @@ class JuniorAgentLaunchIn(BaseModel):
     q: str | None = Field(default=None, max_length=200)
 
 
+class JuniorProjectAgentLaunchIn(BaseModel):
+    """Launch recorded on POST /projects/{slug}/agents. The slug is the path, not the body."""
+
+    prompt: str = Field(min_length=1, max_length=32000)
+    thread_id: uuid.UUID | None = None
+    q: str | None = Field(default=None, max_length=200)
+
+
 class JuniorAgentRunIn(BaseModel):
     prompt: str | None = Field(default=None, max_length=32000)
     status: str | None = Field(default=None, max_length=40)

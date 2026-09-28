@@ -75,10 +75,12 @@ class _ScriptedHttp:
         self.outcomes = list(outcomes)
         self.calls: list[tuple[str, str]] = []
         self.params: list[dict] = []
+        self.json_bodies: list[dict] = []
 
     def _next(self, method: str, path: str, **kwargs) -> SimpleNamespace:
         self.calls.append((method, path))
         self.params.append(kwargs.get("params") or {})
+        self.json_bodies.append(kwargs.get("json") or {})
         if not self.outcomes:
             raise AssertionError("unexpected extra HTTP call")
         outcome = self.outcomes.pop(0)
@@ -108,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_is_continue_get_v1(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-project-agent-get-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-project-agents-page-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -233,6 +235,11 @@ class SharedClientSmokeTests(unittest.TestCase):
             _windows(client).get_project_agent(uuid.uuid4(), "storykeep")
         self.assertEqual(project_agent.exception.status_code, 401)
         self.assertIn("did not load this project agent", project_agent.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_agents:
+            _phone(client).get_project_agents("storykeep")
+        self.assertEqual(project_agents.exception.status_code, 401)
+        self.assertIn("did not load these project agents", project_agents.exception.user_message)
 
     def test_demo_is_forbidden_for_both_clients(self):
         demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
@@ -366,6 +373,16 @@ class SharedClientSmokeTests(unittest.TestCase):
             _windows(client).update_project_agent(uuid.uuid4(), status="launched")
         self.assertEqual(project_agent_updated.exception.status_code, 403)
         self.assertIn("did not update this project agent", project_agent_updated.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_agents:
+            _phone(client).get_project_agents("storykeep")
+        self.assertEqual(project_agents.exception.status_code, 403)
+        self.assertIn("did not load these project agents", project_agents.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_agent_launched:
+            _windows(client).launch_project_agent("Fix the memory API", slug="storykeep")
+        self.assertEqual(project_agent_launched.exception.status_code, 403)
+        self.assertIn("did not record this project agent", project_agent_launched.exception.user_message)
 
     def test_phone_posts_on_the_shared_messages_route(self):
         thread, user_msg = _turn("phone")
@@ -1191,6 +1208,39 @@ class SharedClientSmokeTests(unittest.TestCase):
             replay_http.calls,
             [("POST", f"/api/v1/junior/projects/storykeep/agents/{run_id}")],
         )
+        self.assertFalse(path.exists())
+
+    def test_project_agents_page_403_and_launch_replays(self):
+        http = _ScriptedHttp([200, 403, 403, 403])
+        page = _phone(http).get_project_agents("storykeep", limit=2, cursor="abc")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(http.calls[0], ("GET", "/api/v1/junior/projects/storykeep/agents"))
+        self.assertEqual(http.params[0], {"limit": 2, "cursor": "abc"})
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_project_agents("storykeep")
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load these project agents", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as launched:
+                phone_client(fail, queue_path=path).launch_project_agent(
+                    "Fix the memory API", slug="storykeep"
+                )
+        self.assertIn("did not record this project agent", launched.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_agent")
+        self.assertEqual(restarted.last_failed_post["prompt"], "Fix the memory API")
+        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(replay_http.calls, [("POST", "/api/v1/junior/projects/storykeep/agents")])
+        self.assertEqual(replay_http.json_bodies[0]["prompt"], "Fix the memory API")
+        self.assertNotIn("project_slug", replay_http.json_bodies[0])
         self.assertFalse(path.exists())
 
 
