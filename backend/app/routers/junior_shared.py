@@ -154,6 +154,31 @@ def get_thread_message(
     )
 
 
+@router.post("/threads/{thread_id}/messages/{message_id}", response_model=JuniorSharedMessageOut)
+def update_thread_message(
+    thread_id: UUID,
+    message_id: UUID,
+    payload: JuniorSharedMessageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    fields = payload.model_fields_set
+    row = store.update_thread_message(
+        db,
+        user,
+        thread_id,
+        message_id,
+        content=payload.body or None,
+        venue=payload.venue if "venue" in fields else None,
+        meta=payload.meta if "meta" in fields else None,
+        set_venue="venue" in fields,
+        set_meta="meta" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedMessageOut.model_validate(row)
+
+
 @router.post("/threads/{thread_id}/messages", response_model=JuniorSharedMessagePostOut)
 def post_message(
     thread_id: UUID,
@@ -247,6 +272,27 @@ def post_turn(
     if junior_row is not None:
         db.refresh(junior_row)
     return _turn_out(thread.id, user_row, junior_row, reply_status)
+
+
+@router.get("/threads/{thread_id}/continue", response_model=JuniorSharedContinueOut)
+def get_continue_history(
+    thread_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> JuniorSharedContinueOut:
+    thread = store.thread_owned(db, user, thread_id)
+    history, next_cursor = store.list_messages_page(
+        db, user, thread.id, limit=limit, cursor=cursor, before_id=before_id
+    )
+    _page_headers(response, next_cursor)
+    return JuniorSharedContinueOut(
+        thread=JuniorSharedThreadOut.model_validate(thread),
+        messages=[JuniorSharedMessageOut.model_validate(row) for row in history],
+    )
 
 
 @router.post("/threads/{thread_id}/continue", response_model=JuniorSharedContinueOut)

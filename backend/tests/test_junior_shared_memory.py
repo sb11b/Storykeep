@@ -165,6 +165,17 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ).status_code,
             401,
         )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/threads/{uuid.uuid4()}/messages/{uuid.uuid4()}",
+                json={"text": "revised turn"},
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            client.get(f"/api/v1/junior/threads/{uuid.uuid4()}/continue").status_code,
+            401,
+        )
 
     def test_demo_gets_403(self):
         app = _app(SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True))
@@ -188,6 +199,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("GET", "/api/v1/junior/agent-context/storykeep"),
             ("POST", "/api/v1/junior/agent-context/storykeep"),
             ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/messages/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/messages/{uuid.uuid4()}"),
+            ("GET", f"/api/v1/junior/threads/{uuid.uuid4()}/continue"),
             ("POST", f"/api/v1/junior/search/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/sessions/{uuid.uuid4()}"),
@@ -357,6 +370,22 @@ class JuniorSharedRouteTests(unittest.TestCase):
         self.assertEqual(str(nested_msg.call_args.args[2]), str(thread_id))
         self.assertEqual(str(nested_msg.call_args.args[3]), str(user_msg.id))
 
+        with patch("app.routers.junior_shared.store.thread_owned", return_value=thread), patch(
+            "app.routers.junior_shared.store.list_messages_page",
+            return_value=([user_msg], str(user_msg.id)),
+        ) as continue_page:
+            history = TestClient(app).get(
+                f"/api/v1/junior/threads/{thread_id}/continue",
+                params={"limit": 1, "cursor": str(user_msg.id)},
+            )
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.json()["thread"]["id"], str(thread_id))
+        self.assertEqual(len(history.json()["messages"]), 1)
+        self.assertIsNone(history.json()["user_message"])
+        self.assertEqual(history.headers.get("x-next-cursor"), str(user_msg.id))
+        self.assertEqual(continue_page.call_args.kwargs["limit"], 1)
+        self.assertEqual(continue_page.call_args.kwargs["cursor"], str(user_msg.id))
+
         revised = SimpleNamespace(
             id=user_msg.id,
             thread_id=user_msg.thread_id,
@@ -375,6 +404,19 @@ class JuniorSharedRouteTests(unittest.TestCase):
         self.assertEqual(changed.json()["content"], "revised turn")
         self.assertEqual(str(patched.call_args.args[2]), str(user_msg.id))
         self.assertEqual(patched.call_args.kwargs["content"], "revised turn")
+
+        with patch(
+            "app.routers.junior_shared.store.update_thread_message", return_value=revised
+        ) as nested_update:
+            nested_changed = TestClient(app).post(
+                f"/api/v1/junior/threads/{thread_id}/messages/{user_msg.id}",
+                json={"text": "revised turn", "venue": "phone"},
+            )
+        self.assertEqual(nested_changed.status_code, 200)
+        self.assertEqual(nested_changed.json()["content"], "revised turn")
+        self.assertEqual(str(nested_update.call_args.args[2]), str(thread_id))
+        self.assertEqual(str(nested_update.call_args.args[3]), str(user_msg.id))
+        self.assertEqual(nested_update.call_args.kwargs["content"], "revised turn")
 
         with patch("app.routers.junior_shared.store.update_thread", return_value=archived) as updated:
             closed = TestClient(app).post(
@@ -512,6 +554,21 @@ class JuniorSharedServiceTests(unittest.TestCase):
         ]
         with self.assertRaises(HTTPException) as caught:
             store.message_owned(db, owner, uuid.uuid4())
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_update_thread_message_is_404_when_thread_mismatches(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        other_thread = uuid.uuid4()
+        message_id = uuid.uuid4()
+        db = MagicMock()
+        db.get.side_effect = [
+            SimpleNamespace(id=thread_id, user_id=owner.id),
+            SimpleNamespace(id=message_id, thread_id=other_thread),
+            SimpleNamespace(id=other_thread, user_id=owner.id),
+        ]
+        with self.assertRaises(HTTPException) as caught:
+            store.update_thread_message(db, owner, thread_id, message_id, content="revised turn")
         self.assertEqual(caught.exception.status_code, 404)
 
     def test_update_message_is_404_for_other_user(self):

@@ -130,11 +130,13 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/threads/{id}` | Update title/status (`open` / `archived`) |
 | `GET` | `/api/v1/junior/threads/{id}/messages` | Thread history (`limit`, `cursor` or `before_id`) |
 | `GET` | `/api/v1/junior/threads/{id}/messages/{id}` | One message in that thread |
+| `POST` | `/api/v1/junior/threads/{id}/messages/{id}` | Update that message (404 if it is not in the thread) |
 | `POST` | `/api/v1/junior/threads/{id}/messages` | Send a turn (`text` or `content`, `venue`, optional `meta`) |
 | `GET` | `/api/v1/junior/messages` | Recent messages for the signed-in user (same page params; optional `thread_id`) |
 | `GET` | `/api/v1/junior/messages/{id}` | One message the signed-in user owns |
 | `POST` | `/api/v1/junior/messages/{id}` | Update an existing message (404 if missing) |
 | `POST` | `/api/v1/junior/messages` | Same turn; omit `thread_id` to use last `open` thread (or create one) |
+| `GET` | `/api/v1/junior/threads/{id}/continue` | Continue history for that thread (`limit`, `cursor` or `before_id`) |
 | `POST` | `/api/v1/junior/threads/{id}/continue` | Resume a thread; with `text` this is another turn (`limit`, `cursor` or `before_id` on history) |
 | `GET` | `/api/v1/junior/search?q=` | FTS over that user’s threads/messages (`limit`, `cursor` or `before_id`) |
 | `GET` | `/api/v1/junior/search/{id}` | One search hit the signed-in user owns |

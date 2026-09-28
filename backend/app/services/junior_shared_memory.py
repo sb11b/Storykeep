@@ -176,6 +176,31 @@ def thread_message_owned(
     return row
 
 
+def update_thread_message(
+    db: Session,
+    user: User,
+    thread_id: UUID,
+    message_id: UUID,
+    *,
+    content: str | None = None,
+    venue: str | None = None,
+    meta: dict[str, Any] | None = None,
+    set_venue: bool = False,
+    set_meta: bool = False,
+) -> JuniorThreadMessage:
+    thread_message_owned(db, user, thread_id, message_id)
+    return update_message(
+        db,
+        user,
+        message_id,
+        content=content,
+        venue=venue,
+        meta=meta,
+        set_venue=set_venue,
+        set_meta=set_meta,
+    )
+
+
 def update_message(
     db: Session,
     user: User,

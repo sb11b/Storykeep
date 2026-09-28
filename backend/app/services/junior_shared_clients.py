@@ -20,6 +20,7 @@ Failed message updates replay on POST /messages/{id}. GET /projects/{slug} loads
 Failed agent updates replay on POST /agents/{id}. GET /search/{id} loads one search hit.
 Failed search-hit updates replay on POST /search/{id}. GET /agent-context/{slug} loads one project context pack.
 Failed agent-context updates replay on POST /agent-context/{slug}. GET /threads/{id}/messages/{id} loads one thread message.
+Failed thread-message updates replay on POST /threads/{id}/messages/{id}. GET /threads/{id}/continue loads one continue history pack.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-thread-message-get-v1"
+HEALTH_STAMP = "junior-client-continue-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -142,6 +143,11 @@ def _is_context_update_path(path: str) -> bool:
     if cleaned.endswith("/agent-context"):
         return False
     return "/agent-context/" in cleaned
+
+
+def _is_thread_message_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/threads/" in cleaned and "/messages/" in cleaned and "/continue" not in cleaned
 
 
 def next_page_cursor(response: Any) -> str | None:
@@ -343,6 +349,8 @@ class SharedMemoryClient:
             return "search_update"
         if _is_context_update_path(path):
             return "context_update"
+        if _is_thread_message_update_path(path):
+            return "thread_message_update"
         if path.rstrip("/").endswith("/projects"):
             return "project"
         if _is_project_update_path(path):
@@ -411,6 +419,16 @@ class SharedMemoryClient:
                 q=post.get("q"),
                 thread_id=post.get("thread_id"),
             )
+        if kind == "thread_message_update" and thread_id:
+            message_id = post.get("message_id") or post.get("id")
+            if message_id:
+                return self.update_thread_message(
+                    thread_id,
+                    message_id,
+                    str(post.get("content") or post.get("text") or text),
+                    venue=post.get("venue"),
+                    meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+                )
         if kind == "memory":
             return self.upsert_memory(
                 str(post.get("content") or text),
@@ -500,6 +518,8 @@ class SharedMemoryClient:
             kind = "search_update"
         elif _is_context_update_path(path):
             kind = "context_update"
+        elif _is_thread_message_update_path(path):
+            kind = "thread_message_update"
         elif path.rstrip("/").endswith("/threads"):
             kind = "thread"
         elif _is_thread_update_path(path):
@@ -514,7 +534,11 @@ class SharedMemoryClient:
             "thread_id": body.get("thread_id"),
             "session_id": body.get("session_id") or body.get("id"),
             "message_id": body.get("message_id")
-            or (body.get("id") if kind in {"message_update", "search_update"} else None),
+            or (
+                body.get("id")
+                if kind in {"message_update", "search_update", "thread_message_update"}
+                else None
+            ),
             "snippet": body.get("snippet"),
             "slug": body.get("slug"),
             "display_name": body.get("display_name"),
@@ -838,6 +862,51 @@ class SharedMemoryClient:
         return self._read(
             f"{API_PREFIX}/threads/{thread_id}/messages/{message_id}",
             action="load this message",
+        )
+
+    def update_thread_message(
+        self,
+        thread_id: UUID | str,
+        message_id: UUID | str,
+        content: str,
+        *,
+        venue: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "id": str(message_id),
+            "thread_id": str(thread_id),
+            "message_id": str(message_id),
+            "content": content,
+        }
+        json_body: dict[str, Any] = {"text": content}
+        if venue is not None:
+            body["venue"] = venue
+            json_body["venue"] = venue
+        if meta is not None:
+            body["meta"] = meta
+            json_body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/threads/{thread_id}/messages/{message_id}",
+            action="update this thread message",
+            body=body,
+            json=json_body,
+        )
+
+    def get_continue(
+        self,
+        thread_id: UUID | str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/threads/{thread_id}/continue",
+            action="load this continue",
+            **({"params": params} if params else {}),
         )
 
     def update_message(
