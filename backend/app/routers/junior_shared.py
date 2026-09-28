@@ -30,6 +30,7 @@ from app.schemas import (
     JuniorSharedMessagePostOut,
     JuniorSharedSearchHitIn,
     JuniorSharedSearchHitOut,
+    JuniorThreadSearchIn,
     JuniorSharedThreadIn,
     JuniorSharedThreadOut,
 )
@@ -442,6 +443,51 @@ def update_thread_agent(
     db.commit()
     db.refresh(row)
     return JuniorAgentRunOut.model_validate(row)
+
+
+@router.get("/threads/{thread_id}/search", response_model=list[JuniorSharedSearchHitOut])
+def list_thread_search(
+    thread_id: UUID,
+    response: Response,
+    q: str = Query(min_length=1, max_length=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorSharedSearchHitOut]:
+    store.thread_owned(db, user, thread_id)
+    hits, next_cursor = store.search_page(
+        db, user, q, limit=limit, cursor=cursor, before_id=before_id, thread_id=thread_id
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSharedSearchHitOut.model_validate(hit) for hit in hits]
+
+
+@router.post("/threads/{thread_id}/search", response_model=list[JuniorSharedSearchHitOut])
+def search_thread(
+    thread_id: UUID,
+    payload: JuniorThreadSearchIn,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorSharedSearchHitOut]:
+    """Run a search on this thread. Replay stays on this route, not GET /search."""
+    store.thread_owned(db, user, thread_id)
+    hits, next_cursor = store.search_page(
+        db,
+        user,
+        payload.q,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+        thread_id=thread_id,
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSharedSearchHitOut.model_validate(hit) for hit in hits]
 
 
 @router.get("/threads/{thread_id}/search/{message_id}", response_model=JuniorSharedSearchHitOut)

@@ -1286,6 +1286,34 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertTrue(changed.call_args.kwargs["set_snippet"])
         self.assertEqual(changed.call_args.kwargs["snippet"], "revised snippet")
 
+        with patch(
+            "app.routers.junior_shared.store.search_page",
+            return_value=([hit], str(message_id)),
+        ) as paged, patch("app.routers.junior_shared.store.thread_owned", return_value=object()):
+            listed = TestClient(app).get(
+                f"/api/v1/junior/threads/{thread_id}/search",
+                params={"q": "notes", "limit": 1, "cursor": str(message_id)},
+            )
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()[0]["snippet"], "pinned snippet")
+        self.assertEqual(listed.headers.get("x-next-cursor"), str(message_id))
+        self.assertEqual(paged.call_args.args[2], "notes")
+        self.assertEqual(str(paged.call_args.kwargs["thread_id"]), str(thread_id))
+        self.assertEqual(paged.call_args.kwargs["limit"], 1)
+
+        with patch(
+            "app.routers.junior_shared.store.search_page",
+            return_value=([hit], None),
+        ) as ran, patch("app.routers.junior_shared.store.thread_owned", return_value=object()):
+            posted_search = TestClient(app).post(
+                f"/api/v1/junior/threads/{thread_id}/search",
+                json={"q": "notes"},
+            )
+        self.assertEqual(posted_search.status_code, 200)
+        self.assertEqual(posted_search.json()[0]["snippet"], "pinned snippet")
+        self.assertEqual(ran.call_args.args[2], "notes")
+        self.assertEqual(str(ran.call_args.kwargs["thread_id"]), str(thread_id))
+
     def test_invalid_slug(self):
         with self.assertRaises(HTTPException) as caught:
             store.normalize_slug("Story Keep")

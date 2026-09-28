@@ -778,22 +778,26 @@ def search_page(
     limit: int | None = 25,
     cursor: UUID | str | None = None,
     before_id: UUID | str | None = None,
+    thread_id: UUID | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     q = _clean_text(query, max_len=200)
     cap = clamp_page_limit(limit, default=25)
     tsquery = func.plainto_tsquery("english", q)
     msg_rank = func.ts_rank_cd(JuniorThreadMessage.content_tsv, tsquery)
     thread_rank = func.ts_rank_cd(JuniorThread.title_tsv, tsquery)
+    filters = [
+        JuniorThread.user_id == user.id,
+        or_(
+            JuniorThreadMessage.content_tsv.op("@@")(tsquery),
+            JuniorThread.title_tsv.op("@@")(tsquery),
+        ),
+    ]
+    if thread_id is not None:
+        filters.append(JuniorThread.id == thread_id)
     stmt = (
         select(JuniorThread, JuniorThreadMessage, msg_rank)
         .join(JuniorThreadMessage, JuniorThreadMessage.thread_id == JuniorThread.id)
-        .where(
-            JuniorThread.user_id == user.id,
-            or_(
-                JuniorThreadMessage.content_tsv.op("@@")(tsquery),
-                JuniorThread.title_tsv.op("@@")(tsquery),
-            ),
-        )
+        .where(*filters)
         .order_by((msg_rank + thread_rank).desc(), JuniorThread.updated_at.desc(), JuniorThreadMessage.id.desc())
         .limit(PAGE_MAX)
     )
