@@ -35,11 +35,24 @@ Titles, URLs, and short snippets only. No HTML.
 Skip uCertify, publisher paywalls, and login walls.
 If there are no public hits, return []."""
 SEARCH_ON_APPEND = """
-You have live web_search. For current events, prices, docs, scores, UTC/date sources, or “look this up”, you MUST call web_search before answering.
+You have live web_search. For current events, prices, docs, scores, schedules, UTC/date sources, or “look this up”, you MUST call web_search before answering.
+For a game schedule, list each game: matchup, start time with timezone, and TV or streaming. Never answer with only the word TV. Never stop after saying you are looking it up.
 Cite each source as [title](url).
 If web_search fails, say the search tool failed and include the status — never that you cannot search, cannot browse, or do not have web access.
 Do not scrape uCertify, publisher paywalls, or login walls. Public pages / search API only.
 """
+SCHEDULE_EXTRACT_SYSTEM = """Search the public web for today's game schedule.
+Return a JSON array of at most 5 objects with keys title, url, snippet.
+Put matchup, start time with timezone, and TV or streaming in the snippet when the page states them.
+Titles, URLs, and snippets only. No HTML.
+If there are no public hits, return []."""
+SCHEDULE_REPLY_RULE = (
+    "This turn needs the schedule, not a status line. "
+    "List each game you can support: matchup, start time with timezone, and TV or streaming. "
+    "Do not answer with only the word TV. "
+    "Do not say you are looking it up and then stop. "
+    "Do not print stop tokens such as <|eos|>."
+)
 _RETRY_STATUSES = frozenset({401, 408, 429, 503})
 _TOOL_TYPES = ("live_search", "web_search")
 _BLOCKED_HOST_RE = re.compile(
@@ -49,8 +62,23 @@ _BLOCKED_HOST_RE = re.compile(
 _LOOKUP_RE = re.compile(
     r"\b(?:look(?:ing)?(?:\s+\w+){0,3}\s+up|search(?:\s+the\s+web)?|google|"
     r"current(?:\s+\w+){0,4}|latest|today|right now|utc|score|prices?|"
-    r"documentation|docs\b|what(?:'s| is|s) (?:the )?(?:nfl|date|time)|"
-    r"nfl\b|stock|weather|who won|headline|news)\b",
+    r"documentation|docs\b|what(?:'s| is|s) (?:the )?(?:nfl|mlb|nba|nhl|date|time)|"
+    r"what time|start times?|schedule|mlb\b|baseball|nfl\b|nba\b|nhl\b|"
+    r"stock|weather|who won|headline|news)\b",
+    re.I,
+)
+_SCHEDULE_ASK_RE = re.compile(
+    r"\b(?:mlb|baseball|nfl|nba|nhl|games?|schedule|start times?|what time)\b",
+    re.I,
+)
+_SHORT_TV_RE = re.compile(
+    r"^(?:yes|yeah|yep|sure|ok|okay)?[\s,.]*(?:on\s+)?tv(?:\s+listings?)?[.!?]?$",
+    re.I,
+)
+_CLOCK_RE = re.compile(r"\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:a\.?m\.?|p\.?m\.?)\b", re.I)
+_STOP_TOKEN_RE = re.compile(r"<\|(?:eos|end|eot|im_end|endoftext)\|>", re.I)
+_LOOKUP_STUB_RE = re.compile(
+    r"look(?:ing)? up|i(?:'|’)ll look|let me (?:check|look)|searching the",
     re.I,
 )
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
@@ -114,11 +142,80 @@ def owner_can_search(user: object | None) -> bool:
     return configured() and not is_locked(user)
 
 
-def wants_web_search(message: str) -> bool:
+def _message_text(item: object) -> str:
+    if not isinstance(item, dict):
+        return ""
+    content = item.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                parts.append(part["text"])
+        return " ".join(parts)
+    return ""
+
+
+def prior_turn_text(history: list | None) -> str:
+    texts = [_message_text(item) for item in history or []]
+    texts = [text.strip() for text in texts if text.strip()]
+    if len(texts) > 1:
+        texts = texts[:-1]
+    else:
+        texts = []
+    return "\n".join(texts[-4:])
+
+
+def wants_web_search(message: str, history: list | None = None) -> bool:
     text = (message or "").strip()
     if not text:
         return False
-    return bool(_LOOKUP_RE.search(text))
+    if _LOOKUP_RE.search(text) or needs_schedule_answer(text, history):
+        return True
+    return False
+
+
+def needs_schedule_answer(message: str, history: list | None = None) -> bool:
+    text = (message or "").strip()
+    if _SCHEDULE_ASK_RE.search(text):
+        return True
+    return bool(_SHORT_TV_RE.match(text) and _SCHEDULE_ASK_RE.search(prior_turn_text(history)))
+
+
+def search_query_for(message: str, history: list | None = None) -> str:
+    text = (message or "").strip()
+    if needs_schedule_answer(text, history):
+        prior = prior_turn_text(history)
+        focus = prior if _SHORT_TV_RE.match(text) and prior else text
+        return clamp_query(f"{focus} start times and TV listings")
+    return clamp_query(text)
+
+
+def strip_stop_tokens(text: str) -> str:
+    return _STOP_TOKEN_RE.sub("", text or "").strip()
+
+
+def reply_is_schedule_stub(text: str) -> bool:
+    cleaned = strip_stop_tokens(text or "")
+    if not cleaned:
+        return True
+    if _CLOCK_RE.search(cleaned) and len(cleaned.split()) > 8:
+        return False
+    if len(cleaned.split()) <= 4:
+        return True
+    return bool(_LOOKUP_STUB_RE.search(cleaned) and not _CLOCK_RE.search(cleaned))
+
+
+def schedule_listing(hits: tuple[SearchHit, ...] | list[SearchHit]) -> str:
+    rows = list(hits)[:RESULT_CAP]
+    if not rows:
+        return "I could not find today's public game listings. Ask again in a minute."
+    lines = ["Today's listings from the search:"]
+    for hit in rows:
+        detail = hit.snippet.strip() or hit.title
+        lines.append(f"- {detail} [{hit.title}]({hit.url})")
+    return "\n".join(lines)
 
 
 def is_web_search_tool(item: object) -> bool:
@@ -183,7 +280,7 @@ def assemble_web_search_query(fragments: list[dict] | None) -> str | None:
     return None
 
 
-def search(query: str) -> SearchOutcome:
+def search(query: str, *, schedule: bool = False) -> SearchOutcome:
     cleaned = clamp_query(query)
     if not cleaned:
         return SearchOutcome((), True, EMPTY_TOAST, False, 200, EMPTY_TOAST)
@@ -194,7 +291,7 @@ def search(query: str) -> SearchOutcome:
     last_detail = UI_UNAVAILABLE
     for attempt in range(2):
         try:
-            hits, retryable, http_status, detail = _search_once(cleaned)
+            hits, retryable, http_status, detail = _search_once(cleaned, schedule=schedule)
         except httpx.TimeoutException:
             last_status = 504
             last_detail = _fail_detail(504, "timeout")
@@ -219,12 +316,12 @@ def search(query: str) -> SearchOutcome:
     return SearchOutcome((), False, last_detail, True, last_status, last_detail)
 
 
-def extract_hits(body: object) -> list[SearchHit]:
+def extract_hits(body: object, *, snippet_cap: int = SNIPPET_CHAR_CAP) -> list[SearchHit]:
     found: list[SearchHit] = []
     seen: set[str] = set()
 
     def add(title: str, url: str, snippet: str) -> None:
-        hit = _normalize_hit(title, url, snippet)
+        hit = _normalize_hit(title, url, snippet, snippet_cap=snippet_cap)
         if hit is None or hit.url in seen:
             return
         seen.add(hit.url)
@@ -233,7 +330,7 @@ def extract_hits(body: object) -> list[SearchHit]:
     if not isinstance(body, dict):
         return []
     text = _output_text(body)
-    for hit in _hits_from_json(text):
+    for hit in _hits_from_json(text, snippet_cap=snippet_cap):
         add(hit.title, hit.url, hit.snippet)
     for item in body.get("output") or []:
         if not isinstance(item, dict):
@@ -282,13 +379,13 @@ def extract_hits(body: object) -> list[SearchHit]:
     return found[:RESULT_CAP]
 
 
-def _search_once(query: str) -> tuple[list[SearchHit], bool, int, str]:
+def _search_once(query: str, *, schedule: bool = False) -> tuple[list[SearchHit], bool, int, str]:
     key = (settings.xai_api_key or "").strip()
     url = _responses_url()
     payload: dict[str, object] = {
         "model": "grok-4.6",
         "input": [
-            {"role": "system", "content": SEARCH_EXTRACT_SYSTEM},
+            {"role": "system", "content": SCHEDULE_EXTRACT_SYSTEM if schedule else SEARCH_EXTRACT_SYSTEM},
             {"role": "user", "content": query},
         ],
         "store": False,
@@ -321,7 +418,10 @@ def _search_once(query: str) -> tuple[list[SearchHit], bool, int, str]:
         except json.JSONDecodeError:
             last_detail = _fail_detail(502, "non-JSON")
             return [], True, 502, last_detail
-        hits = extract_hits(body if isinstance(body, dict) else {})
+        hits = extract_hits(
+            body if isinstance(body, dict) else {},
+            snippet_cap=700 if schedule else SNIPPET_CHAR_CAP,
+        )
         if hits:
             return hits, False, 200, ""
         last_detail = EMPTY_TOAST
@@ -344,7 +444,7 @@ def _plain(text: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
-def _normalize_hit(title: str, url: str, snippet: str) -> SearchHit | None:
+def _normalize_hit(title: str, url: str, snippet: str, *, snippet_cap: int = SNIPPET_CHAR_CAP) -> SearchHit | None:
     href = (url or "").strip()
     if not href.startswith("http://") and not href.startswith("https://"):
         return None
@@ -356,11 +456,11 @@ def _normalize_hit(title: str, url: str, snippet: str) -> SearchHit | None:
     if "/login" in href.lower() or "/signin" in href.lower():
         return None
     label = _plain(title)[:TITLE_CHAR_CAP] or host
-    blurb = _plain(snippet)[:SNIPPET_CHAR_CAP]
+    blurb = _plain(snippet)[:snippet_cap]
     return SearchHit(label, href, blurb)
 
 
-def _hits_from_json(text: str) -> list[SearchHit]:
+def _hits_from_json(text: str, *, snippet_cap: int = SNIPPET_CHAR_CAP) -> list[SearchHit]:
     blob = (text or "").strip()
     if "```" in blob:
         fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", blob, re.I)
@@ -384,6 +484,7 @@ def _hits_from_json(text: str) -> list[SearchHit]:
             str(item.get("title") or ""),
             str(item.get("url") or item.get("href") or ""),
             str(item.get("snippet") or item.get("text") or ""),
+            snippet_cap=snippet_cap,
         )
         if hit:
             hits.append(hit)

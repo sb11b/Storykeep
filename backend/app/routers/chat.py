@@ -1189,7 +1189,8 @@ def _chat(
     from app.services import junior_model
 
     search_enabled = search_tool.owner_can_search(user)
-    will_search = search_enabled and search_tool.wants_web_search(user_text)
+    will_search = search_enabled and search_tool.wants_web_search(user_text, history_for_xai)
+    schedule_turn = search_enabled and search_tool.needs_schedule_answer(user_text, history_for_xai)
     will_voices = tts_service.wants_voice_info(user_text)
     owner_ops = user is not None and not is_locked(user)
     railway_enabled = railway_tool.owner_can_use(user)
@@ -1478,6 +1479,7 @@ def _chat(
 
         async def emit_delta(piece: str) -> None:
             nonlocal ttft_ms, flushed, saw_text
+            piece = search_tool.strip_stop_tokens(piece)
             if not piece:
                 return
             assistant_parts.append(piece)
@@ -1687,8 +1689,15 @@ def _chat(
                 block = tts_service.format_voices_for_model(voice_list)
                 extra = f"{extra}\n{block}" if extra else block
             if will_search:
-                outcome = await asyncio.to_thread(search_tool.search, user_text)
+                search_query = search_tool.search_query_for(user_text, history_for_xai)
+                outcome = await asyncio.to_thread(
+                    search_tool.search,
+                    search_query,
+                    schedule=schedule_turn,
+                )
                 already_searched = True
+                if schedule_turn:
+                    extra = f"{extra}\n{search_tool.SCHEDULE_REPLY_RULE}" if extra else search_tool.SCHEDULE_REPLY_RULE
                 if outcome.toast:
                     yield chat_service.encode_sse(
                         {
@@ -1748,6 +1757,7 @@ def _chat(
                 )
                 extra = f"{extra}\n{block}" if extra else block
             stream = _stream_xai(extra, tools)
+            held_schedule: list[str] = []
             async for piece in stream:
                 if piece is chat_service.STREAM_HEARTBEAT:
                     yield chat_service.SSE_PADDING
@@ -1770,13 +1780,56 @@ def _chat(
                         yield chat_service.encode_sse({"stream_status": "thinking"})
                         await asyncio.sleep(0)
                     continue
+                if schedule_turn:
+                    held_schedule.append(piece)
+                    if not saw_text:
+                        yield chat_service.encode_sse({"stream_status": "thinking"})
+                        await asyncio.sleep(0)
+                    continue
                 first = not saw_text
-                await emit_delta(piece)
-                delta_event: dict[str, object] = {"delta": piece}
+                visible = search_tool.strip_stop_tokens(piece)
+                await emit_delta(visible)
+                if not visible:
+                    continue
+                delta_event: dict[str, object] = {"delta": visible}
                 if first:
                     delta_event["stream_status"] = "writing"
                 yield chat_service.encode_sse(delta_event)
                 await asyncio.sleep(0)
+            if schedule_turn and not cancelled.is_set():
+                draft = search_tool.strip_stop_tokens("".join(held_schedule))
+                if search_tool.reply_is_schedule_stub(draft):
+                    yield chat_service.encode_sse({"stream_status": "searching"})
+                    await asyncio.sleep(0)
+                    query = search_tool.search_query_for(user_text, history_for_xai)
+                    outcome = await asyncio.to_thread(search_tool.search, query, schedule=True)
+                    if outcome.fatal:
+                        yield chat_service.encode_sse(
+                            chat_service.stream_error_event(outcome.status_code, outcome.detail)
+                        )
+                        return
+                    listing = search_tool.schedule_listing(outcome.hits)
+                    rule = f"{search_tool.SCHEDULE_REPLY_RULE}\nThe previous draft was not a schedule. Replace it."
+                    if outcome.empty:
+                        block = f"{rule}\n{search_tool.EMPTY_SYSTEM}\n{listing}"
+                    else:
+                        block = f"{rule}\n{search_tool.format_hits_for_model(outcome.hits)}\n{listing}"
+                    extra = f"{extra}\n{block}" if extra else block
+                    retry_parts: list[str] = []
+                    async for piece in _stream_xai(extra, None):
+                        if piece is chat_service.STREAM_HEARTBEAT:
+                            yield chat_service.SSE_PADDING
+                            yield chat_service.encode_sse({"heartbeat": True, "stream_status": "writing"})
+                            await asyncio.sleep(0)
+                            continue
+                        if isinstance(piece, str) and piece:
+                            retry_parts.append(piece)
+                    retry = search_tool.strip_stop_tokens("".join(retry_parts))
+                    draft = retry if not search_tool.reply_is_schedule_stub(retry) else listing
+                if draft:
+                    await emit_delta(draft)
+                    yield chat_service.encode_sse({"delta": draft, "stream_status": "writing"})
+                    await asyncio.sleep(0)
             if cancelled.is_set() or await request.is_disconnected():
                 _persist_assistant("".join(assistant_parts))
                 return

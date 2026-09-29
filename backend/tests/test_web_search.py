@@ -46,6 +46,24 @@ class WebSearchClientTests(unittest.TestCase):
         self.assertTrue(web_search.wants_web_search("current bitcoin price"))
         self.assertFalse(web_search.wants_web_search("hello"))
         self.assertFalse(web_search.wants_web_search("thanks"))
+        self.assertTrue(web_search.wants_web_search("what time today are the mlb games?"))
+        history = [
+            {"role": "user", "content": "what time today are the mlb games?"},
+            {"role": "assistant", "content": "TV."},
+            {"role": "user", "content": "yes on tv"},
+        ]
+        self.assertTrue(web_search.needs_schedule_answer("yes on tv", history))
+        self.assertTrue(web_search.wants_web_search("yes on tv", history))
+        self.assertIn("TV listings", web_search.search_query_for("yes on tv", history))
+        self.assertTrue(web_search.reply_is_schedule_stub("TV."))
+        self.assertTrue(
+            web_search.reply_is_schedule_stub(
+                "Looking up today’s MLB schedule with start times and TV listings.<|eos|>"
+            )
+        )
+        self.assertNotIn("<|eos|>", web_search.strip_stop_tokens("listings.<|eos|>"))
+        full = "Yankees at Red Sox, 7:05 p.m. ET on ESPN. Dodgers at Padres, 10:10 p.m. ET on MLB Network."
+        self.assertFalse(web_search.reply_is_schedule_stub(full))
 
     def test_missing_key_is_unavailable_not_cannot_search(self):
         with patch.object(web_search.settings, "xai_api_key", ""):

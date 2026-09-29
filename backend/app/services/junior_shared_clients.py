@@ -55,7 +55,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-search-get-v1"
+HEALTH_STAMP = "junior-mlb-schedule-v1"
 
 
 class SharedMemoryError(Exception):
