@@ -1332,6 +1332,39 @@ def update_agent_context(
     )
 
 
+def project_agent_context(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    query: str | None = None,
+) -> dict[str, Any]:
+    get_project(db, user, slug)
+    return build_agent_context(db, user, project_slug=slug, query=query)
+
+
+def update_project_agent_context(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    query: str | None = None,
+    thread_id: UUID | None = None,
+    set_query: bool = False,
+    set_thread_id: bool = False,
+) -> dict[str, Any]:
+    get_project(db, user, slug)
+    return update_agent_context(
+        db,
+        user,
+        slug,
+        query=query,
+        thread_id=thread_id,
+        set_query=set_query,
+        set_thread_id=set_thread_id,
+    )
+
+
 def thread_agent_context(
     db: Session,
     user: User,

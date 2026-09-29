@@ -55,7 +55,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-mlb-schedule-v1"
+HEALTH_STAMP = "junior-client-project-context-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -124,6 +124,8 @@ def _is_project_update_path(path: str) -> bool:
     if "/agents/" in cleaned or cleaned.endswith("/agents"):
         return False
     if "/search/" in cleaned or cleaned.endswith("/search"):
+        return False
+    if cleaned.endswith("/agent-context"):
         return False
     return "/projects/" in cleaned
 
@@ -219,6 +221,11 @@ def _is_search_update_path(path: str) -> bool:
     if "/threads/" in cleaned or "/projects/" in cleaned:
         return False
     return "/search/" in cleaned
+
+
+def _is_project_context_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and cleaned.endswith("/agent-context")
 
 
 def _is_thread_context_update_path(path: str) -> bool:
@@ -441,6 +448,8 @@ class SharedMemoryClient:
             return "project_search_update"
         if _is_project_search_create_path(path):
             return "project_search"
+        if _is_project_context_update_path(path):
+            return "project_context_update"
         if _is_thread_agent_update_path(path):
             return "thread_agent_update"
         if _is_thread_memory_update_path(path):
@@ -570,6 +579,13 @@ class SharedMemoryClient:
                     snippet=post.get("snippet") or text or None,
                     venue=post.get("search_venue") or post.get("hit_venue"),
                 )
+        if kind == "project_context_update":
+            slug = post.get("slug") or post.get("project_slug") or self.project_slug
+            return self.update_project_agent_context(
+                str(slug),
+                q=post.get("q"),
+                thread_id=post.get("thread_id"),
+            )
         if kind == "thread_search_update" and thread_id:
             message_id = post.get("message_id") or post.get("id")
             if message_id:
@@ -704,6 +720,8 @@ class SharedMemoryClient:
             kind = "project_search_update"
         elif _is_project_search_create_path(path):
             kind = "project_search"
+        elif _is_project_context_update_path(path):
+            kind = "project_context_update"
         elif _is_thread_agent_update_path(path):
             kind = "thread_agent_update"
         elif _is_thread_memory_update_path(path):
@@ -1119,6 +1137,46 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{slug}/search/{message_id}",
             action="update this project search hit",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_agent_context(
+        self,
+        slug: str | None = None,
+        *,
+        q: str | None = None,
+    ) -> Any:
+        target = slug or self.project_slug
+        params: dict[str, Any] = {}
+        if q:
+            params["q"] = q
+        return self._read(
+            f"{API_PREFIX}/projects/{target}/agent-context",
+            action="load this project context",
+            **({"params": params} if params else {}),
+        )
+
+    def update_project_agent_context(
+        self,
+        slug: str | None = None,
+        *,
+        q: str | None = None,
+        thread_id: UUID | str | None = None,
+    ) -> Any:
+        target = slug or self.project_slug
+        body: dict[str, Any] = {"slug": target, "project_slug": target}
+        json_body: dict[str, Any] = {}
+        if q is not None:
+            body["q"] = q
+            json_body["q"] = q
+        if thread_id is not None:
+            body["thread_id"] = str(thread_id)
+            json_body["thread_id"] = str(thread_id)
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{target}/agent-context",
+            action="update this project context",
             body=body,
             json=json_body,
         )

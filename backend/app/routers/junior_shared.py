@@ -1014,6 +1014,40 @@ def update_project_search_hit(
     return JuniorSharedSearchHitOut.model_validate(hit)
 
 
+@router.get("/projects/{slug}/agent-context", response_model=JuniorAgentContextOut)
+def get_project_agent_context(
+    slug: str,
+    q: str | None = Query(default=None, max_length=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentContextOut:
+    pack = store.project_agent_context(db, user, slug, query=q)
+    return _context_out(pack)
+
+
+@router.post("/projects/{slug}/agent-context", response_model=JuniorAgentContextOut)
+def update_project_agent_context(
+    slug: str,
+    payload: JuniorAgentContextIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentContextOut:
+    """Pin this project's context pack. Replay stays on this route, not POST /agent-context/{slug}."""
+    incoming = payload or JuniorAgentContextIn()
+    fields = incoming.model_fields_set
+    pack = store.update_project_agent_context(
+        db,
+        user,
+        slug,
+        query=incoming.q if "q" in fields else None,
+        thread_id=incoming.thread_id if "thread_id" in fields else None,
+        set_query="q" in fields,
+        set_thread_id="thread_id" in fields,
+    )
+    db.commit()
+    return _context_out(pack)
+
+
 @router.post("/projects/{slug}", response_model=JuniorProjectOut)
 def update_project(
     slug: str,
