@@ -187,6 +187,44 @@ def _get(path: str) -> tuple[int, Any]:
     return response.status_code, body
 
 
+def open_pull_request(*, head: str, base: str = "main", title: str, body: str = "") -> str | None:
+    """Open a PR so Bugbot can review a Junior Cloud Agent branch. None when it cannot."""
+    repo = _repo()
+    owner = repo.split("/", 1)[0]
+    head_name = (head or "").strip()
+    base_name = (base or "main").strip() or "main"
+    if head_name.startswith(f"{owner}:"):
+        head_name = head_name.split(":", 1)[1]
+    if not head_name or head_name == base_name:
+        return None
+    if not configured():
+        return None
+    status_code, payload = _post(
+        f"/repos/{repo}/pulls",
+        {
+            "title": (title or f"Junior: {head_name}")[:240],
+            "head": head_name,
+            "base": base_name,
+            "body": body or "Opened so Bugbot can review this branch.",
+        },
+    )
+    if status_code in (200, 201) and isinstance(payload, dict):
+        url = str(payload.get("html_url") or "").strip()
+        if url:
+            return url
+    code, existing = _get(
+        f"/repos/{repo}/pulls?state=open&base={quote(base_name, safe='')}&head={quote(owner + ':' + head_name, safe='')}"
+    )
+    if code == 200 and isinstance(existing, list):
+        for item in existing:
+            if isinstance(item, dict):
+                url = str(item.get("html_url") or "").strip()
+                if url:
+                    return url
+    logger.info("GitHub pull request was not opened for %s (HTTP %s)", head_name, status_code)
+    return None
+
+
 def _clip(text: str, limit: int = 120) -> str:
     one = " ".join((text or "").split())
     if len(one) <= limit:

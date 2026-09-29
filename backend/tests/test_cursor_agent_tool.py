@@ -224,6 +224,8 @@ class CursorAgentToolTests(unittest.TestCase):
         assert task is not None
         self.assertIn("Sequenced #5", task)
         self.assertIn("last_failed_post", task)
+        self.assertIn("Open a pull request into main so Bugbot reviews it automatically", task)
+        self.assertNotIn("Do not open a pull request", task)
         self.assertFalse(cursor_agent_tool.wants_start("do not start sequence number five"))
         self.assertTrue(cursor_agent_tool.wants_start("start next step"))
         four = cursor_agent_tool.next_step_task("sequenced #4")
@@ -352,7 +354,9 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertIn("Push to main (Ubuntu)", outcome.text)
         self.assertEqual(outcome.agent_id, "bc-00000000-0000-0000-0000-000000000001")
         payload = mock_client.request.call_args.kwargs["json"]
-        self.assertEqual(payload["prompt"]["text"], "Add deploy polling tests")
+        self.assertTrue(payload["prompt"]["text"].startswith("Add deploy polling tests"))
+        self.assertIn("Bugbot reviews that pull request automatically", payload["prompt"]["text"])
+        self.assertTrue(payload.get("autoCreatePR"))
         self.assertEqual(payload["repos"][0]["startingRef"], "main")
 
     def test_push_workflow_mentions_cursor_branch(self):
@@ -386,6 +390,8 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertTrue(outcome.ok)
         self.assertIn("Auto PR", outcome.text)
         self.assertTrue(mock_client.request.call_args.kwargs["json"].get("autoCreatePR"))
+        sent = mock_client.request.call_args.kwargs["json"]["prompt"]["text"]
+        self.assertIn("Bugbot reviews that pull request automatically", sent)
 
     @patch("app.services.cursor_agent_tool.settings")
     def test_start_agent_not_configured(self, mock_settings: MagicMock) -> None:

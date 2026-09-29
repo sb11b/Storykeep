@@ -137,8 +137,13 @@ _NEGATED_START_RE = re.compile(
     re.I,
 )
 _AUTO_PR_RE = re.compile(
-    r"\b(?:auto[\s-]?create\s+pr|open\s+a\s+pr|create\s+(?:a\s+)?pull\s+request)\b",
+    r"\b(?:auto[\s-]?create\s+pr|open\s+a\s+pr|open\s+a\s+pull\s+request|create\s+(?:a\s+)?pull\s+request)\b",
     re.I,
+)
+_BUGBOT_PR_NOTE = (
+    "\n\nWhen this run pushes a cursor/* branch, open a pull request into main. "
+    "Bugbot reviews that pull request automatically. Do not merge the pull request. "
+    "Do not push to main."
 )
 
 CURSOR_START_TOOL = {
@@ -164,8 +169,8 @@ CURSOR_START_TOOL = {
                 },
                 "auto_create_pr": {
                     "type": "boolean",
-                    "description": "Open a PR when the agent finishes.",
-                    "default": False,
+                    "description": "Open a pull request when the agent finishes so Bugbot can review it. Default true.",
+                    "default": True,
                 },
             },
             "required": ["prompt"],
@@ -300,7 +305,7 @@ _NEXT_STEP_RE = re.compile(
 
 SEQ_28_TASK = """Sequenced #28 — next after junior-client-thread-search-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, or #27).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #27 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #27 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads/{id}/search/{id}; failed updates replay on that route
@@ -324,7 +329,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_27_TASK = """Sequenced #27 — next after junior-client-thread-agents-page-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, or #26).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #26 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #26 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads/{id}/agents; failed launches replay on that route
@@ -348,7 +353,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_26_TASK = """Sequenced #26 — next after junior-client-thread-agent-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, or #25).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #25 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #25 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads/{id}/agents/{id}; failed updates replay on that route
@@ -372,7 +377,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_25_TASK = """Sequenced #25 — next after junior-client-thread-memories-page-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, or #24).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #24 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #24 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads/{id}/memories; failed creates replay on that route
@@ -396,7 +401,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_24_TASK = """Sequenced #24 — next after junior-client-project-agents-page-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, or #23).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #23 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #23 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /projects/{slug}/agents; failed launches replay on that route
@@ -420,7 +425,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_23_TASK = """Sequenced #23 — next after junior-client-thread-memory-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, or #22).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #22 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #22 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads/{id}/memories/{id}; failed updates replay on that route
@@ -444,7 +449,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_22_TASK = """Sequenced #22 — next after junior-client-project-agent-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, or #21).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #21 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #21 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /projects/{slug}/agents/{id}; failed updates replay on that route
@@ -467,7 +472,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_21_TASK = """Sequenced #21 — next after junior-client-continue-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, or #20).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #20 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #20 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads/{id}/messages/{id}; failed updates replay on that route
@@ -490,7 +495,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_20_TASK = """Sequenced #20 — next after junior-client-thread-message-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, or #19).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, and #19 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, and #19 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /agent-context/{slug}; failed updates replay on that route
@@ -514,7 +519,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_19_TASK = """Sequenced #19 — next after junior-client-context-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, or #18).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, and #18 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, and #18 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /search/{id}; failed updates replay on that route
@@ -538,7 +543,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_18_TASK = """Sequenced #18 — next after junior-client-search-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, or #17).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, and #17 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, and #17 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /agents/{id}; failed updates replay on that route
@@ -562,7 +567,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_17_TASK = """Sequenced #17 — next after junior-client-project-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, or #16).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, and #16 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, #15, and #16 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /messages/{id}; failed updates replay on that route
@@ -586,7 +591,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_16_TASK = """Sequenced #16 — next after junior-client-message-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, or #15).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, and #15 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, #14, and #15 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /sessions/{id}; failed updates replay on that route
@@ -610,7 +615,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_15_TASK = """Sequenced #15 — next after junior-client-session-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, or #14).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, and #14 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, #13, and #14 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /memories/{id}; failed updates replay on that route
@@ -634,7 +639,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_14_TASK = """Sequenced #14 — next after junior-client-agent-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, or #13).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, and #13 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, #12, and #13 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /projects/{slug}; failed updates replay on that route
@@ -658,7 +663,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_13_TASK = """Sequenced #13 — next after junior-client-memory-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, or #12).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, and #12 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, #11, and #12 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads; failed creates replay on that route
@@ -684,7 +689,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_12_TASK = """Sequenced #12 — next after junior-client-thread-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, or #11).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, and #11 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, #10, and #11 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /threads; failed creates replay on that route
@@ -708,7 +713,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_11_TASK = """Sequenced #11 — next after junior-client-sessions-page-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, or #10).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, and #10 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, #9, and #10 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /sessions; failed heartbeats replay on that route
@@ -732,7 +737,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_10_TASK = """Sequenced #10 — next after junior-client-memory-write-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, or #9).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, and #9 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7, #8, and #9 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients POST /memories; failed writes replay on that route
@@ -757,7 +762,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_9_TASK = """Sequenced #9 — next after junior-client-agents-page-v1 (do not redo #2, #3, #4, #5, #6, #7, or #8).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients keep a FIFO of failed posts and replay in order after the same login
@@ -782,7 +787,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_8_TASK = """Sequenced #8 — next after junior-client-context-page-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, or #7).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients replay queued continue posts through POST /threads/{id}/continue
@@ -806,7 +811,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_7_TASK = """Sequenced #7 — next after junior-client-queue-multi-v1 on GitHub main (do not redo #2, #3, #4, #5, or #6).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #6 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #6 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients keep a FIFO of failed posts and replay in order after the same login
@@ -830,7 +835,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_4_TASK = """Sequenced #4 — next after junior-shared-clients-v1 on production (do not redo #2 or #3).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done:
 - Dockerfile copies backend/migrations → /app/migrations
@@ -855,7 +860,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_6_TASK = """Sequenced #6 — next after junior-client-queue-page-v1 on GitHub main (do not redo #2, #3, #4, or #5).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #5 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #5 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients persist last_failed_post and replay after the same login
@@ -878,7 +883,7 @@ Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
 
 SEQ_5_TASK = """Sequenced #5 — next after junior-client-robustness-v1 on GitHub main (do not redo #2, #3, or #4).
 
-Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main (739bafb or newer). #4 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Do not open a pull request.
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main (739bafb or newer). #4 is already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
 
 Already done on main:
 - Phone and Windows clients retry 401/403/5xx with backoff
@@ -933,7 +938,7 @@ def _later_sequence_task(number: int, message: str) -> str:
         "Steve asked to start this sequence. Do not refuse. Do not ask him to define it. "
         "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, or #28. "
         "Do not merge steve-bitsko Cursor PR #2. Do not change the owner email. "
-        "Do not git-push to main. Do not re-run SQL. Do not open a pull request. "
+        "Do not git-push to main. Do not re-run SQL. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request. "
         "Commit on a cursor/* branch and push that branch only.\n\n"
         f"His request: {spoken}"
     )
@@ -1265,9 +1270,9 @@ def start_agent(
     ref = (branch or extract_branch(source_message or "") if source_message else None) or _default_branch()
     ref = ref.strip() or _default_branch()
     repo_url = _repo_url()
-    auto_pr = auto_create_pr
-    if auto_pr is None and source_message:
-        auto_pr = wants_auto_create_pr(source_message)
+    auto_pr = True if auto_create_pr is None else bool(auto_create_pr)
+    if auto_pr and "Bugbot reviews that pull request automatically" not in task:
+        task = task.rstrip() + _BUGBOT_PR_NOTE
     payload: dict[str, Any] = {
         "prompt": {"text": task},
         "repos": [{"url": repo_url, "startingRef": ref}],

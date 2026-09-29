@@ -90,6 +90,23 @@ def poll_one(db: Session, row: CursorAgentWatch, *, now: datetime | None = None)
     snapshot = cursor_agent_tool.fetch_run(row.agent_id, row.run_id)
     if snapshot.run_id and snapshot.run_id != row.run_id:
         row.run_id = snapshot.run_id
+    base = (row.starting_branch or "main").strip() or "main"
+    if (snapshot.status or "").upper() == "FINISHED" and snapshot.branch and snapshot.branch != base and not snapshot.pr_url:
+        from dataclasses import replace
+
+        from app.services import github_tool
+
+        opened = github_tool.open_pull_request(
+            head=snapshot.branch,
+            base=base,
+            title=f"Junior: {snapshot.branch}",
+            body=(
+                "Opened so Bugbot can review this Junior Cloud Agent branch.\n\n"
+                f"Agent: {row.agent_url or ''}"
+            ),
+        )
+        if opened:
+            snapshot = replace(snapshot, pr_url=opened)
     if not snapshot.reachable and not stale:
         row.updated_at = instant
         return
