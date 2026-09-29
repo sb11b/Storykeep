@@ -20,6 +20,7 @@ import { INVALID_CHAT_TOAST, isConversationId } from "@/lib/chat-conversation";
 import { grokModelLabel, isGrokReasoningEffort, spendChipLabel } from "@/lib/grok-model";
 import { comparePinned } from "@/lib/pin-order";
 import { agentFollowUpPending } from "@/lib/agent-followup";
+import { juniorNotice, messagesNewerThan, shouldShowJuniorNotice } from "@/lib/junior-message-notice";
 import type { GrokConversation, MessageCryptoStatus, TtsVoice } from "@/lib/types";
 import { parseCustomNoteShelves, uniqueShelfId, type CustomNoteShelf, type FilingDestination } from "@/lib/custom-note-shelves";
 import {
@@ -127,6 +128,12 @@ export function GrokBubble({
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
+  const [noticeCount, setNoticeCount] = useState(0);
+  const openRef = useRef(false);
+  openRef.current = open;
+  const seenMessageIdsRef = useRef(new Set<string>());
+  const conversationUpdatedRef = useRef(new Map<string, string>());
+  const conversationListReadyRef = useRef(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [pos, setPos] = useState({ x: 24, y: 24 });
   const [size, setSize] = useState({ w: 640, h: 720 });
@@ -229,6 +236,23 @@ export function GrokBubble({
   useEffect(() => {
     if (open && persist) void refreshHistory();
   }, [open, persist, refreshHistory]);
+
+  useEffect(() => {
+    if (open) setNoticeCount(0);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || typeof Notification === "undefined" || Notification.permission !== "default") return;
+    void Notification.requestPermission();
+  }, [open]);
+
+  useEffect(() => {
+    for (const pane of panes) {
+      for (const message of pane.messages) {
+        if (message.id) seenMessageIdsRef.current.add(message.id);
+      }
+    }
+  }, [panes]);
 
   useEffect(() => {
     if (paneLabelsLoadedRef.current) return;
@@ -536,6 +560,35 @@ export function GrokBubble({
     }
   }, [loadConversationInto, panes, persist]);
 
+  function publishJuniorNotice(conversationId: string, conversationTitle: string | null, messages: { id: string; role: string; content: string; created_at?: string }[]) {
+    const focused = panesRef.current.find((pane) => pane.id === focusedPaneIdRef.current);
+    const liveStream = panesRef.current.some(
+      (pane) => pane.conversationId === conversationId && Boolean(pane.streamStatus),
+    );
+    if (
+      !shouldShowJuniorNotice({
+        panelOpen: openRef.current,
+        documentHidden: document.hidden,
+        focusedConversationId: focused?.conversationId ?? null,
+        conversationId,
+        liveStream,
+      })
+    ) {
+      return;
+    }
+    const notice = juniorNotice({ conversationId, conversationTitle, messages });
+    if (!notice) return;
+    toast(notice.title, { description: notice.body });
+    if (!openRef.current) setNoticeCount((count) => count + 1);
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const posted = new Notification(notice.title, { body: notice.body, tag: conversationId });
+    posted.onclick = () => {
+      window.focus();
+      setOpen(true);
+      void loadConversation(conversationId);
+    };
+  }
+
   useEffect(() => {
     if (!persist || needsCryptoUnlock) return;
     const timer = window.setInterval(() => {
@@ -544,6 +597,7 @@ export function GrokBubble({
         if (!pane.conversationId || !agentFollowUpPending(pane.messages)) continue;
         void refreshAgentMessages(pane.id, pane.conversationId);
       }
+      void pollConversationNotices();
     }, 20000);
     return () => window.clearInterval(timer);
   }, [persist, needsCryptoUnlock]);
@@ -567,17 +621,71 @@ export function GrokBubble({
           })),
         })),
       );
+      const pane = panesRef.current.find((item) => item.id === paneId && item.conversationId === conversationId);
+      if (!pane) return;
+      const known = new Set(pane.messages.map((item) => item.id));
+      const extra = incoming.filter((item) => !known.has(item.id) && !seenMessageIdsRef.current.has(item.id));
+      if (!extra.length) return;
+      for (const item of extra) seenMessageIdsRef.current.add(item.id);
+      publishJuniorNotice(conversationId, pane.conversationTitle || pane.displayName, extra);
       setPanes((current) =>
-        current.map((pane) => {
-          if (pane.id !== paneId || pane.conversationId !== conversationId) return pane;
-          const known = new Set(pane.messages.map((item) => item.id));
-          const extra = incoming.filter((item) => !known.has(item.id));
-          if (!extra.length) return pane;
-          return { ...pane, messages: [...pane.messages, ...extra] };
+        current.map((item) => {
+          if (item.id !== paneId || item.conversationId !== conversationId) return item;
+          const have = new Set(item.messages.map((message) => message.id));
+          const added = extra.filter((message) => !have.has(message.id));
+          if (!added.length) return item;
+          return { ...item, messages: [...item.messages, ...added] };
         }),
       );
     } catch {
       // Leave the open thread in place. The next poll retries.
+    }
+  }
+
+  async function pollConversationNotices() {
+    if (!persist) return;
+    try {
+      const rows = await api.chatConversations();
+      if (!conversationListReadyRef.current) {
+        for (const row of rows) conversationUpdatedRef.current.set(row.id, row.updated_at);
+        conversationListReadyRef.current = true;
+        return;
+      }
+      const watched = new Set(
+        panesRef.current
+          .filter((pane) => pane.conversationId && agentFollowUpPending(pane.messages))
+          .map((pane) => pane.conversationId as string),
+      );
+      for (const row of rows) {
+        const previous = conversationUpdatedRef.current.get(row.id);
+        conversationUpdatedRef.current.set(row.id, row.updated_at);
+        if (!previous || previous === row.updated_at || watched.has(row.id)) continue;
+        if (panesRef.current.some((pane) => pane.conversationId === row.id && pane.streamStatus)) continue;
+        const detail = await api.chatConversation(row.id);
+        const incoming = await Promise.all(
+          detail.messages.map(async (item) => ({
+            id: item.id,
+            role: item.role,
+            content: await decryptStoredMessage(item),
+            created_at: item.created_at,
+          })),
+        );
+        const newer = messagesNewerThan(incoming, previous).filter((item) => !seenMessageIdsRef.current.has(item.id));
+        for (const item of incoming) seenMessageIdsRef.current.add(item.id);
+        if (!newer.length) continue;
+        publishJuniorNotice(row.id, row.title, newer);
+        setPanes((current) =>
+          current.map((pane) => {
+            if (pane.conversationId !== row.id) return pane;
+            const have = new Set(pane.messages.map((message) => message.id));
+            const added = newer.filter((message) => !have.has(message.id));
+            if (!added.length) return pane;
+            return { ...pane, messages: [...pane.messages, ...added] };
+          }),
+        );
+      }
+    } catch {
+      // The next poll retries.
     }
   }
 
@@ -998,8 +1106,12 @@ export function GrokBubble({
       type="button"
       className="fixed z-[80] flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-black/10"
       style={{ left: pos.x, top: pos.y }}
-      aria-label={`Open ${bubbleLabel} chat`}
-      title={bubbleLabel}
+      aria-label={
+        noticeCount > 0
+          ? `Open ${bubbleLabel} chat, ${noticeCount} new message${noticeCount === 1 ? "" : "s"}`
+          : `Open ${bubbleLabel} chat`
+      }
+      title={noticeCount > 0 ? `${bubbleLabel} — ${noticeCount} new` : bubbleLabel}
       onPointerDown={(event) => {
         movedRef.current = false;
         dragRef.current = { kind: "bubble", dx: event.clientX - pos.x, dy: event.clientY - pos.y };
@@ -1010,6 +1122,11 @@ export function GrokBubble({
       }}
     >
       <Sparkles className="size-5" />
+      {noticeCount > 0 ? (
+        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white">
+          {noticeCount > 9 ? "9+" : noticeCount}
+        </span>
+      ) : null}
     </button>
   );
 
