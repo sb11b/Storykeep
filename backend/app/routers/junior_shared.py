@@ -977,6 +977,43 @@ def search_project(
     return [JuniorSharedSearchHitOut.model_validate(hit) for hit in hits]
 
 
+@router.get("/projects/{slug}/search/{message_id}", response_model=JuniorSharedSearchHitOut)
+def get_project_search_hit(
+    slug: str,
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedSearchHitOut:
+    return JuniorSharedSearchHitOut.model_validate(
+        store.project_search_hit_owned(db, user, slug, message_id)
+    )
+
+
+@router.post("/projects/{slug}/search/{message_id}", response_model=JuniorSharedSearchHitOut)
+def update_project_search_hit(
+    slug: str,
+    message_id: UUID,
+    payload: JuniorSharedSearchHitIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedSearchHitOut:
+    """Update a search hit on this project. Replay stays on this route, not POST /search/{id}."""
+    incoming = payload or JuniorSharedSearchHitIn()
+    fields = incoming.model_fields_set
+    hit = store.update_project_search_hit(
+        db,
+        user,
+        slug,
+        message_id,
+        snippet=incoming.snippet if "snippet" in fields else None,
+        venue=incoming.venue if "venue" in fields else None,
+        set_snippet="snippet" in fields,
+        set_venue="venue" in fields,
+    )
+    db.commit()
+    return JuniorSharedSearchHitOut.model_validate(hit)
+
+
 @router.post("/projects/{slug}", response_model=JuniorProjectOut)
 def update_project(
     slug: str,

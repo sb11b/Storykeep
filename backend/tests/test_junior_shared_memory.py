@@ -193,6 +193,17 @@ class JuniorSharedRouteTests(unittest.TestCase):
             401,
         )
         self.assertEqual(
+            client.get(f"/api/v1/junior/projects/storykeep/search/{uuid.uuid4()}").status_code,
+            401,
+        )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/projects/storykeep/search/{uuid.uuid4()}",
+                json={"snippet": "pinned snippet"},
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
             client.get(f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}").status_code,
             401,
         )
@@ -274,6 +285,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", "/api/v1/junior/projects/storykeep"),
             ("GET", "/api/v1/junior/projects/storykeep/search?q=notes"),
             ("POST", "/api/v1/junior/projects/storykeep/search"),
+            ("GET", f"/api/v1/junior/projects/storykeep/search/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/projects/storykeep/search/{uuid.uuid4()}"),
         ):
             response = client.request(
                 method,
@@ -721,6 +734,32 @@ class JuniorSharedServiceTests(unittest.TestCase):
         ]
         with self.assertRaises(HTTPException) as caught:
             store.thread_search_hit_owned(db, owner, thread_id, message_id)
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_project_search_hit_owned_is_404_when_not_on_project(self):
+        owner = _owner()
+        message_id = uuid.uuid4()
+        other_thread = uuid.uuid4()
+        message = SimpleNamespace(
+            id=message_id,
+            thread_id=other_thread,
+            content="hi",
+            venue="phone",
+            created_at=None,
+            meta={},
+        )
+        db = MagicMock()
+        db.get.side_effect = [
+            message,
+            SimpleNamespace(id=other_thread, user_id=owner.id, title="other"),
+        ]
+        project = SimpleNamespace(slug="storykeep", meta={})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[uuid.uuid4()],
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                store.project_search_hit_owned(db, owner, "storykeep", message_id)
         self.assertEqual(caught.exception.status_code, 404)
 
     def test_search_hit_owned_is_404_for_other_user(self):
@@ -1454,6 +1493,26 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertEqual(posted_search.json()[0]["snippet"], "pinned snippet")
         self.assertEqual(ran.call_args.args[2], "notes")
         self.assertEqual(ran.call_args.kwargs["thread_ids"], [thread_id])
+
+        with patch("app.routers.junior_shared.store.project_search_hit_owned", return_value=hit) as owned:
+            loaded = TestClient(app).get(f"/api/v1/junior/projects/storykeep/search/{message_id}")
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(loaded.json()["snippet"], "pinned snippet")
+        self.assertEqual(owned.call_args.args[2], "storykeep")
+        self.assertEqual(str(owned.call_args.args[3]), str(message_id))
+
+        revised = {**hit, "snippet": "revised snippet"}
+        with patch("app.routers.junior_shared.store.update_project_search_hit", return_value=revised) as changed:
+            posted = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/search/{message_id}",
+                json={"snippet": "revised snippet"},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["snippet"], "revised snippet")
+        self.assertEqual(changed.call_args.args[2], "storykeep")
+        self.assertEqual(str(changed.call_args.args[3]), str(message_id))
+        self.assertTrue(changed.call_args.kwargs["set_snippet"])
+        self.assertEqual(changed.call_args.kwargs["snippet"], "revised snippet")
 
     def test_invalid_slug(self):
         with self.assertRaises(HTTPException) as caught:

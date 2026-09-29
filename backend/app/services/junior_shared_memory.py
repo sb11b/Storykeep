@@ -895,6 +895,38 @@ def update_thread_search_hit(
     )
 
 
+def project_search_hit_owned(db: Session, user: User, slug: str, message_id: UUID) -> dict[str, Any]:
+    project = get_project(db, user, slug)
+    thread_ids = set(project_search_thread_ids(db, user, project))
+    hit = search_hit_owned(db, user, message_id)
+    if hit["thread_id"] not in thread_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search hit not found")
+    return hit
+
+
+def update_project_search_hit(
+    db: Session,
+    user: User,
+    slug: str,
+    message_id: UUID,
+    *,
+    snippet: str | None = None,
+    venue: str | None = None,
+    set_snippet: bool = False,
+    set_venue: bool = False,
+) -> dict[str, Any]:
+    project_search_hit_owned(db, user, slug, message_id)
+    return update_search_hit(
+        db,
+        user,
+        message_id,
+        snippet=snippet,
+        venue=venue,
+        set_snippet=set_snippet,
+        set_venue=set_venue,
+    )
+
+
 def list_memories(db: Session, user: User, *, kind: str | None = None) -> list[JuniorMemoryFact]:
     rows, _ = list_memories_page(db, user, kind=kind)
     return rows
