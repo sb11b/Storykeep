@@ -86,8 +86,8 @@ CURSOR_PROMPT_SECTION = """## Prompt for Cursor
 Same rules for **typed or dictated (STT)** input:
 
 1. **Steve asks you to write one** (“write a prompt for Cursor…”) — one complete copy-paste block: goal, context, constraints, files, done-when. Fold in any details he already said. Do not start an agent.
-2. **Steve supplied the task** (pasted or spoke the work) — the server starts a Cloud Agent and the reply is the agent URL. Do not replace that with a copy-paste prompt. Do not say you cannot start an agent from this chat. Do not say the key is missing.
-3. **Steve asks to start, launch, go ahead and send, go ahead and start, start next step, or a sequence number** (“sequence number five”) — the server starts it. Return the agent URL and the Ubuntu push steps. Never say there is no agent start tool. Never ask him to define the sequence. Never tell him to copy a prompt into Cursor.
+2. **Steve supplied the task** (pasted or spoke the work) — the server starts a Cloud Agent and the reply stays in this Storykeep chat. Do not send him to a cursor.com URL. Do not replace that with a copy-paste prompt. Do not say you cannot start an agent from this chat. Do not say the key is missing.
+3. **Steve asks to start, launch, go ahead and send, go ahead and start, start next step, or a sequence number** (“sequence number five”) — the server starts it in this Storykeep chat. Never say there is no agent start tool. Never ask him to define the sequence. Never tell him to copy a prompt into Cursor. Never send him to a cursor.com URL.
 4. **After a start,** this same chat gets a follow-up when the run finishes: branch name, what changed, and the merge commands. Do not invent that follow-up before it is in the thread.
 """
 CURSOR_DELEGATE_OLD = (
@@ -110,6 +110,7 @@ def apply_cursor_memory_fix(markdown: str) -> str | None:
         and "when the run finishes" in text
         and "send the next step" in text.lower()
         and "sequence number" in text.lower()
+        and "this Storykeep chat" in text
     ):
         return None
     updated = text
@@ -119,6 +120,7 @@ def apply_cursor_memory_fix(markdown: str) -> str | None:
         STALE_CURSOR_TASK_MARK in updated
         or "sequence number" not in updated.lower()
         or "send the next step" not in updated.lower()
+        or "this Storykeep chat" not in updated
     )
     if not needs_section:
         return updated if updated != text else None

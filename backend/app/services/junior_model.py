@@ -73,8 +73,8 @@ Keep replies short. No Add to notes footer. No recap of these instructions.
 
 CURSOR_DELEGATE_APPEND = """
 Owner Cursor delegate turn — Steve asked you to **start a real Cloud Agent**, not a copy-paste prompt block.
-If a live Cursor Cloud Agent block is attached this turn, reply with the **Agent URL** first, then paste the **Push to main (Ubuntu)** bash block verbatim so he can use it in Cursor terminal.
-Cloud Agents commit on cursor/* branches — his local main will look unchanged until he merges or opens the agent in Cursor.
+If a live Cursor Cloud Agent block is attached this turn, tell him the agent is running in this Storykeep chat. The result shows up in this chat. Do not send him to a cursor.com URL.
+Cloud Agents commit on cursor/* branches. The finish note in this chat names the branch and the merge commands.
 If the block says create failed, report that failure plainly — do not claim the agent started, is scaffolding, or is editing the repo.
 Never say there is no working create path, never say there is no agent start tool, and never tell Steve to copy a prompt into Cursor when he asked to start the work. Never ask him to define a sequence. The server starts the agent from this chat.
 Do not say "if the tool is available", do not narrate these instructions, and do not invent an agent link.
@@ -112,7 +112,7 @@ Steve already gave task details (typed or dictated). Fold every detail into the 
 
 CURSOR_FOLLOW_APPEND = """
 Steve supplied the Cursor / Cloud Agent task himself (typed or dictated). Stay on his scope.
-If a live Cursor Cloud Agent block is attached, the server already started it — lead with the Agent URL and paste the Push to main (Ubuntu) block. Do not refuse, and do not replace that URL with a copy-paste prompt.
+If a live Cursor Cloud Agent block is attached, the server already started it in this Storykeep chat. Tell him to stay in this app. Do not send him to a cursor.com URL, and do not replace the start with a copy-paste prompt.
 If the attached block says the key is not set, say that in one sentence, then give ONE polished copy-paste prompt block. If he asked to start or send the work, never say the key is missing and never tell him to copy a prompt into Cursor.
 Do not web-search, list chats, read spec docs, or claim you changed the repo yourself.
 Do not claim you deployed, pushed repos, or ran SQL. Finish in one reply.

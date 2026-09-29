@@ -392,6 +392,7 @@ class CursorAgentToolTests(unittest.TestCase):
         outcome = cursor_agent_tool.start_agent("Add deploy polling tests", branch="main")
         self.assertTrue(outcome.ok)
         self.assertIn("Agent URL:", outcome.text)
+        self.assertIn("this Storykeep chat", outcome.text)
         self.assertIn("Push to main (Ubuntu)", outcome.text)
         self.assertEqual(outcome.agent_id, "bc-00000000-0000-0000-0000-000000000001")
         payload = mock_client.request.call_args.kwargs["json"]

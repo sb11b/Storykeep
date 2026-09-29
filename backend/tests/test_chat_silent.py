@@ -452,7 +452,8 @@ class CursorStartPayloadTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("cannot access local variable", response.text)
         self.assertIn("Cursor Cloud Agent started", response.text)
-        self.assertIn("https://cursor.com/agents/agent-1", response.text)
+        self.assertIn("this Storykeep chat", response.text)
+        self.assertNotIn("https://cursor.com/agents/agent-1", response.text)
 
     def test_sequenced_polish_starts_agent(self):
         from app.services import cursor_agent_tool
@@ -484,7 +485,8 @@ class CursorStartPayloadTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("no working create path", response.text.lower())
-        self.assertIn("https://cursor.com/agents/agent-2", response.text)
+        self.assertIn("this Storykeep chat", response.text)
+        self.assertNotIn("https://cursor.com/agents/agent-2", response.text)
         self.assertTrue(start_agent.called)
         self.assertIn("Sequenced #2 polish", start_agent.call_args.args[0])
         self.assertEqual(start_agent.call_args.kwargs["branch"], "main")
@@ -520,7 +522,8 @@ class CursorStartPayloadTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("no key", response.text.lower())
         self.assertNotIn("copy this into cursor", response.text.lower())
-        self.assertIn("https://cursor.com/agents/agent-4", response.text)
+        self.assertIn("this Storykeep chat", response.text)
+        self.assertNotIn("https://cursor.com/agents/agent-4", response.text)
         self.assertTrue(start_agent.called)
         self.assertIn("Sequenced #32", start_agent.call_args.args[0])
         self.assertEqual(start_agent.call_args.kwargs["branch"], "main")
@@ -558,7 +561,8 @@ class CursorStartPayloadTests(unittest.TestCase):
         lowered = response.text.lower()
         self.assertNotIn("no agent start tool", lowered)
         self.assertNotIn("isn't defined", lowered)
-        self.assertIn("https://cursor.com/agents/agent-5", response.text)
+        self.assertIn("this Storykeep chat", response.text)
+        self.assertNotIn("https://cursor.com/agents/agent-5", response.text)
         self.assertIn("Sequenced #5", start_agent.call_args.args[0])
 
     def test_unmerged_git_index_returns_abort_steps(self):

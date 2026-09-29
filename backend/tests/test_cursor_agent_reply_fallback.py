@@ -18,7 +18,8 @@ class CursorAgentReplyFallbackTests(unittest.TestCase):
         )
         text = cursor_agent_tool.summarize_agent_for_user(outcome)
         self.assertIn("Cursor Cloud Agent started", text)
-        self.assertIn("https://cursor.com/agents/bc-123", text)
+        self.assertIn("this Storykeep chat", text)
+        self.assertNotIn("https://cursor.com/agents/bc-123", text)
 
     def test_summarize_agent_not_configured(self):
         outcome = cursor_agent_tool.CursorAgentOutcome(

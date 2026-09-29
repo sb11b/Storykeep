@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApiError, api } from "@/lib/api";
 import { decryptStoredMessage, encryptMessageBody } from "@/lib/message-crypto";
 import { savedReplyFillsEmptyBubble } from "@/lib/saved-reply";
+import { agentFollowUpPending } from "@/lib/agent-followup";
 import { destinationLabel, type CustomNoteShelf, type FilingDestination } from "@/lib/custom-note-shelves";
 import { folderById, matchFolderByName } from "@/lib/folders";
 import { filingFromDropdowns, loadLastFiling, saveLastFiling } from "@/lib/last-filing";
@@ -2491,6 +2492,16 @@ export function GrokPane({
           {savingChat ? "Saving…" : "Save chat"}
         </Button>
       </div>
+
+      {agentFollowUpPending(pane.messages) ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="shrink-0 border-b bg-muted px-3 py-2 text-sm font-medium text-foreground"
+        >
+          Cloud Agent is running in this chat. The result will show up here.
+        </p>
+      ) : null}
 
       {visibleStatus && visibleStatus !== "done" && visibleStatus !== "error" ? (
         <p

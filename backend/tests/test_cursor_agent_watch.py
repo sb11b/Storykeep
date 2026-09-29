@@ -30,6 +30,8 @@ class AgentFollowUpTests(unittest.TestCase):
         self.assertIn("git merge --ff-only github/cursor/mail-pin", text)
         self.assertIn("What changed: Fixed the mail list contrast", text)
         self.assertIn("pull/12", text)
+        self.assertIn("The result is in this chat", text)
+        self.assertNotIn("https://cursor.com/agents/bc-1", text)
         self.assertNotIn("YOUR-BRANCH-NAME", text)
 
     def test_running_follow_up_is_empty(self):
@@ -107,4 +109,5 @@ class CursorMemoryFixTests(unittest.TestCase):
         self.assertIn("Custom school note stays.", updated)
         self.assertNotIn("polish his text into one copy-paste block", updated)
         self.assertIn("when the run finishes", updated)
+        self.assertIn("this Storykeep chat", updated)
         self.assertIsNone(junior_memory.apply_cursor_memory_fix(updated))

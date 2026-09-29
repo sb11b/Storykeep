@@ -1373,7 +1373,8 @@ def _format_agent_response(
         )
     )
     lines.append(
-        "Report the Agent URL and the Push to main (Ubuntu) block to Steve. "
+        "Tell Steve the agent is running in this Storykeep chat and the result will show up here. "
+        "Do not send him to a cursor.com URL. "
         "Do not say the tool might be unavailable — this block is authoritative for this turn."
     )
     run_id = str(run.get("id") or "").strip() or None
@@ -1422,17 +1423,17 @@ def format_start_for_model(outcome: CursorAgentOutcome) -> str:
     return f"{prefix}\n{outcome.text}"
 
 
+_IN_APP_START = (
+    "Cursor Cloud Agent started.\n\n"
+    "It is running in this Storykeep chat. Stay in this app.\n\n"
+    "When it finishes, this chat gets what changed, the branch name, and the merge commands."
+)
+
+
 def summarize_agent_for_user(outcome: CursorAgentOutcome) -> str:
     """Plain reply when xAI stays silent after server-side agent start."""
-    if outcome.ok and outcome.agent_url:
-        bits = [
-            "Cursor Cloud Agent started.",
-            f"Open: {outcome.agent_url}",
-            "Commits land on a cursor/* branch — use Open in Cursor or the Ubuntu merge steps below.",
-            "When it finishes, this chat gets the branch name, what changed, and the merge commands.",
-        ]
-        workflow = push_workflow_for_user(agent_url=outcome.agent_url)
-        return f"{bits[0]} {bits[1]}\n\n{bits[2]}\n\n{bits[3]}\n\n{workflow}"
+    if outcome.ok and (outcome.agent_id or outcome.agent_url):
+        return _IN_APP_START
     text = (outcome.text or "").strip()
     if not outcome.ok and text:
         if text.startswith("Cursor Cloud Agent create failed"):
@@ -1441,12 +1442,11 @@ def summarize_agent_for_user(outcome: CursorAgentOutcome) -> str:
     if text:
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped.startswith("- Agent URL:"):
-                url = stripped.split(":", 1)[1].strip()
-                return f"Cursor Cloud Agent started. Open: {url}"
+            if stripped.startswith("- Agent URL:") or stripped.startswith("- Agent id:"):
+                return _IN_APP_START
         return text.splitlines()[0][:500]
     if outcome.ok:
-        return "Cursor Cloud Agent started — open Cursor → Agents to watch progress."
+        return _IN_APP_START
     return "Could not start Cursor Cloud Agent — check server logs or CURSOR_API_KEY on Railway."
 
 
@@ -1581,18 +1581,18 @@ def format_follow_up(
     stale: bool = False,
 ) -> str | None:
     """Chat text for a finished, failed, missing, or stale run. None while it is still running."""
-    url = (agent_url or "").strip() or "(agent link from the earlier message)"
+    del agent_url
     if stale:
         return (
             "Cloud Agent update\n\n"
-            f"This run is still going. Open: {url}\n\n"
+            "This run is still going in this Storykeep chat.\n\n"
             "The branch name and merge commands will show up here when it finishes."
         )
     status_name = (snapshot.status or "").upper()
     if status_name == "MISSING":
         return (
             "Cloud Agent update\n\n"
-            f"That agent is no longer on Cursor. Open: {url}"
+            "That agent is no longer running. This chat has the last update."
         )
     if status_name not in TERMINAL_RUN_STATUSES:
         return None
@@ -1600,18 +1600,18 @@ def format_follow_up(
         detail = (snapshot.result or "").strip() or "No result text came back."
         return (
             "Cloud Agent update\n\n"
-            f"The run ended with status {status_name}. Open: {url}\n\n"
+            f"The run ended with status {status_name}. The result is in this chat.\n\n"
             f"{detail[:1200]}"
         )
     changed = " ".join((snapshot.result or "").split())
     if len(changed) > 1200:
         changed = changed[:1200].rstrip() + "…"
     if not changed:
-        changed = "The agent finished without a written summary. Open the link to review the diff."
+        changed = "The agent finished without a written summary. The result is in this chat."
     lines = [
         "Cloud Agent update",
         "",
-        f"Finished. Open: {url}",
+        "Finished. The result is in this chat.",
         "",
         f"What changed: {changed}",
     ]
@@ -1631,7 +1631,7 @@ def format_follow_up(
             ]
         )
     else:
-        lines.extend(["", "No cursor/ branch was listed yet. Open the agent link and check Branches on GitHub."])
+        lines.extend(["", "No cursor/ branch was listed yet. Ask in this chat: Show GitHub status."])
     return "\n".join(lines)
 
 
