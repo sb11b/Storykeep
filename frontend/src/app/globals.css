@@ -184,6 +184,23 @@
   cursor: pointer;
 }
 
+/* Sign-in is painted on a light paper gradient. OS dark mode must not turn the title light. */
+.storykeep-login {
+  color: oklch(0.24 0.02 55);
+  --foreground: oklch(0.24 0.02 55);
+  --muted-foreground: oklch(0.45 0.03 55);
+  --card: oklch(0.985 0.01 88);
+  --card-foreground: oklch(0.24 0.02 55);
+  --popover: oklch(0.985 0.01 88);
+  --popover-foreground: oklch(0.24 0.02 55);
+  --background: oklch(0.985 0.01 88);
+  --border: oklch(0.86 0.025 80);
+  --input: oklch(0.9 0.02 80);
+  --muted: oklch(0.935 0.016 88);
+  --secondary: oklch(0.93 0.02 85);
+  --secondary-foreground: oklch(0.28 0.03 50);
+}
+
 .sk-page-surface {
   background-color: var(--storykeep-page-bg);
   color: var(--storykeep-page-fg, var(--foreground));

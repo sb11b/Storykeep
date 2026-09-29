@@ -54,7 +54,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-thread-context-get-v1"
+HEALTH_STAMP = "junior-wordmark-v1"
 
 
 class SharedMemoryError(Exception):

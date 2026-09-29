@@ -67,7 +67,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#f3e3c8_0%,transparent_42%),linear-gradient(180deg,#f6f1e8,#efe6d6)] flex items-center justify-center px-4 py-10">
+    <div className="storykeep-login min-h-screen bg-[radial-gradient(circle_at_top,#f3e3c8_0%,transparent_42%),linear-gradient(180deg,#f6f1e8,#efe6d6)] flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <p className="font-[family-name:var(--font-serif)] text-4xl tracking-tight">Storykeep</p>

@@ -1573,6 +1573,9 @@ export function LibraryApp({ user, onUserChange }: { user: User; onUserChange?: 
           <Button variant="toolbar-ghost" size="icon" className="md:hidden" onClick={() => setMobileNav(true)}>
             <Menu className="size-4" />
           </Button>
+          <p className="shrink-0 font-[family-name:var(--font-serif)] text-xl leading-none tracking-tight text-[color:var(--storykeep-top-bar-fg,#3f3a32)]">
+            Storykeep
+          </p>
           <form
             className="min-w-40 flex-1 max-w-xl"
             onSubmit={(event) => {
@@ -2487,7 +2490,7 @@ function Sidebar({
         onClick={onProfile}
         className="shrink-0 px-4 pt-5 pb-3 text-left hover:bg-sidebar-accent/40 rounded-none transition-colors"
       >
-        <p className="font-[family-name:var(--font-serif)] text-2xl tracking-tight">Storykeep</p>
+        <p className="font-[family-name:var(--font-serif)] text-2xl tracking-tight text-sidebar-foreground">Storykeep</p>
         <div className="mt-2 flex items-center gap-2">
           <UserAvatar
             mediaId={user.avatar_media_id}
