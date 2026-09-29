@@ -1199,7 +1199,7 @@ def _chat(
     will_github = github_tool.wants_github(user_text)
     will_deploy = railway_tool.wants_railway_deploy(user_text)
     cursor_enabled = cursor_agent_tool.owner_can_use(user)
-    merge_repair_text = cursor_agent_tool.local_merge_repair(user_text)
+    merge_repair_text = cursor_agent_tool.wsl_switch_reply(user_text) or cursor_agent_tool.local_merge_repair(user_text)
     will_cursor_start = (
         merge_repair_text is None
         and junior_model.should_server_start_agent(user_text, configured=cursor_enabled)

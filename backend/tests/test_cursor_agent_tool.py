@@ -86,6 +86,21 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertIn("git reset --hard github/main", asked)
         self.assertFalse(cursor_agent_tool.wants_start("correct the error then give me a paste for ubantu"))
 
+    def test_powershell_wsl_paste_is_not_a_merge(self):
+        msg = (
+            "PS C:\\Users\\steve\\Storykeep> powershellwsl-dUbuntu\n"
+            "powershellwsl-dUbuntu : The term 'powershellwsl-dUbuntu' is not recognized "
+            "as the name of a cmdlet. FullyQualifiedErrorId : CommandNotFoundException\n"
+            "dubantu\n"
+            "just want to switch from powershell to wsl\n"
+        )
+        reply = cursor_agent_tool.wsl_switch_reply(msg)
+        assert reply is not None
+        self.assertIn("wsl -d Ubuntu", reply)
+        self.assertNotIn("git merge --abort", reply)
+        self.assertIsNone(cursor_agent_tool.local_merge_repair(msg))
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
     def test_extract_branch_ignores_git_pack_line(self):
         msg = (
             "go ahead and start next step\n"

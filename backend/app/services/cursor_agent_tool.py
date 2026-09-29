@@ -1115,7 +1115,51 @@ git reset --hard github/main
 """
 
 
+_WSL_SWITCH_RE = re.compile(
+    r"powershell\s*wsl|powershellwsl|from powershell to wsl|switch .{0,40}wsl|"
+    r"wsl\s*-d|-d\s*ubuntu|dubantu|commandnotfound",
+    re.I,
+)
+
+WSL_SWITCH_REPLY = """You are in PowerShell. The prompt starts with PS.
+
+Type this on one line. Leave a space between each word:
+
+```powershell
+wsl -d Ubuntu
+```
+
+Ubuntu starts, and the prompt no longer starts with PS.
+
+If Windows says that name is missing, list the installed names:
+
+```powershell
+wsl -l -v
+```
+
+Use the name from that list, still with spaces:
+
+```powershell
+wsl -d Ubuntu
+```
+
+Do not type powershell in front of wsl.
+Do not join the words into powershellwsl- or -dUbuntu.
+"""
+
+
+def wsl_switch_reply(message: str) -> str | None:
+    text = message or ""
+    if re.search(r"needs merge|unmerged files|resolve your current index", text, re.I):
+        return None
+    if _WSL_SWITCH_RE.search(text):
+        return WSL_SWITCH_REPLY
+    return None
+
+
 def local_merge_repair(message: str) -> str | None:
+    if wsl_switch_reply(message):
+        return None
     if _LOCAL_MERGE_RE.search(message or ""):
         return LOCAL_MERGE_REPLY
     return None
@@ -1123,7 +1167,7 @@ def local_merge_repair(message: str) -> str | None:
 
 def wants_start(message: str) -> bool:
     text = (message or "").strip()
-    if not text or local_merge_repair(text):
+    if not text or wsl_switch_reply(text) or local_merge_repair(text):
         return False
     if sequenced_task(text):
         return True
