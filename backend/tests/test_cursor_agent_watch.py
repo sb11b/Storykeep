@@ -46,10 +46,11 @@ class AgentFollowUpTests(unittest.TestCase):
         self.assertIn("status ERROR", text)
         self.assertNotIn("git merge", text)
 
+    @patch("app.services.github_tool.open_pull_request", return_value="https://github.com/sb11b/Storykeep-/pull/99")
     @patch("app.services.cursor_agent_watch.grok_store.append_message")
     @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")
     @patch("app.services.cursor_agent_watch.cursor_agent_tool.fetch_run")
-    def test_poll_posts_once(self, fetch_run, lookup, append_message):
+    def test_poll_posts_once(self, fetch_run, lookup, append_message, open_pull_request):
         fetch_run.return_value = AgentRunSnapshot("FINISHED", "Done.", "cursor/mail-pin", None, "run-1")
         lookup.return_value = SimpleNamespace(id=uuid.uuid4())
         row = SimpleNamespace(
@@ -69,6 +70,8 @@ class AgentFollowUpTests(unittest.TestCase):
         content = append_message.call_args.kwargs["content"]
         self.assertIn("git merge --abort", content)
         self.assertIn("git merge --ff-only github/cursor/mail-pin", content)
+        self.assertIn("pull/99", content)
+        open_pull_request.assert_called_once()
 
     @patch("app.services.cursor_agent_watch.grok_store.append_message")
     @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")

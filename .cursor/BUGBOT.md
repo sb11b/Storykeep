@@ -12,4 +12,6 @@ Fix these when they show up:
 - Do not change the owner email.
 - Do not print secrets, tokens, or `DATABASE_URL`.
 
+Junior Cloud Agent runs open a pull request into `main` so this review runs. Do not merge steve-bitsko Cursor PR #2.
+
 The repo is `github.com/sb11b/Storykeep-`. Production deploys from GitHub `main`.
