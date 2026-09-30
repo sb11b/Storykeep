@@ -64,7 +64,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-memories-page-v1"
+HEALTH_STAMP = "junior-client-project-thread-agent-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -149,6 +149,8 @@ def _is_project_update_path(path: str) -> bool:
 
 def _is_project_agent_create_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    if "/threads/" in cleaned:
+        return False
     return "/projects/" in cleaned and cleaned.endswith("/agents")
 
 
@@ -238,13 +240,45 @@ def _is_project_thread_message_create_path(path: str) -> bool:
     return "/projects/" in cleaned and "/threads/" in cleaned and cleaned.endswith("/messages")
 
 
+def _project_thread_tail(path: str) -> str | None:
+    """Path after /projects/{slug}/threads/{thread_id}. None when that shape is absent.
+
+    The slug is the single segment after /projects/. A slug of threads or agents
+    must not be read as the route keyword.
+    """
+    cleaned = (path or "").rstrip("/")
+    marker = "/projects/"
+    start = cleaned.find(marker)
+    if start < 0:
+        return None
+    parts = cleaned[start + len(marker) :].split("/")
+    if len(parts) < 3 or parts[1] != "threads" or not parts[0] or not parts[2]:
+        return None
+    return "/".join(parts[3:])
+
+
+def _is_project_thread_agent_update_path(path: str) -> bool:
+    """True only for /projects/{slug}/threads/{thread_id}/agents/{run_id}.
+
+    The slug may itself be the word agents. Match the agents segment after the thread id.
+    """
+    tail = _project_thread_tail(path)
+    if not tail or "/" not in tail:
+        return False
+    kind, _, run_id = tail.partition("/")
+    return kind == "agents" and bool(run_id) and "/" not in run_id
+
+
 def _is_project_thread_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    tail = _project_thread_tail(cleaned)
     if (
         "/messages/" in cleaned
         or cleaned.endswith("/continue")
         or "/memories/" in cleaned
         or cleaned.endswith("/memories")
+        or (tail or "").startswith("agents/")
+        or tail == "agents"
     ):
         return False
     return "/projects/" in cleaned and "/threads/" in cleaned
@@ -266,16 +300,22 @@ def _is_message_update_path(path: str) -> bool:
 
 def _is_thread_agent_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    if "/projects/" in cleaned:
+        return False
     return "/threads/" in cleaned and "/agents/" in cleaned
 
 
 def _is_thread_agent_create_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    if "/projects/" in cleaned:
+        return False
     return "/threads/" in cleaned and cleaned.endswith("/agents")
 
 
 def _is_project_agent_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    if "/threads/" in cleaned:
+        return False
     return "/projects/" in cleaned and "/agents/" in cleaned
 
 
@@ -537,6 +577,8 @@ class SharedMemoryClient:
         if kind:
             return kind
         path = str(post.get("path") or "")
+        if _is_project_thread_agent_update_path(path):
+            return "project_thread_agent_update"
         if _is_project_thread_continue_path(path):
             return "project_thread_continue"
         if _is_project_thread_memory_update_path(path):
@@ -720,6 +762,19 @@ class SharedMemoryClient:
                 project_slug=str(post.get("project_slug") or post.get("slug") or self.project_slug),
                 q=post.get("q"),
             )
+        if kind == "project_thread_agent_update" and thread_id:
+            run_id = post.get("id") or post.get("run_id")
+            if run_id:
+                return self.update_project_thread_agent(
+                    str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                    thread_id,
+                    run_id,
+                    prompt=str(post.get("prompt") or text) or None,
+                    status=post.get("status"),
+                    cursor_agent_id=post.get("cursor_agent_id"),
+                    linked_thread_id=post.get("linked_thread_id"),
+                    meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+                )
         if kind == "thread_agent_update" and thread_id:
             run_id = post.get("id") or post.get("run_id")
             if run_id:
@@ -933,7 +988,9 @@ class SharedMemoryClient:
         self.last_user_error = exc.user_message
         if self._replaying:
             return
-        if _is_project_thread_continue_path(path):
+        if _is_project_thread_agent_update_path(path):
+            kind = "project_thread_agent_update"
+        elif _is_project_thread_continue_path(path):
             kind = "project_thread_continue"
         elif _is_project_thread_memory_update_path(path):
             kind = "project_thread_memory_update"
@@ -1062,7 +1119,12 @@ class SharedMemoryClient:
             "linked_thread_id": body.get("linked_thread_id"),
             "id": body.get("id"),
             "run_id": body.get("id")
-            if kind in {"agent_update", "project_agent_update", "thread_agent_update"}
+            if kind in {
+                "agent_update",
+                "project_agent_update",
+                "thread_agent_update",
+                "project_thread_agent_update",
+            }
             else None,
             "memory_id": body.get("id"),
             "memory_kind": body.get("kind")
@@ -1917,6 +1979,55 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/memories/{memory_id}",
             action="update this project thread memory",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_thread_agent(self, slug: str, thread_id: UUID | str, run_id: UUID | str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/agents/{run_id}",
+            action="load this project thread agent",
+        )
+
+    def update_project_thread_agent(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        run_id: UUID | str,
+        *,
+        prompt: str | None = None,
+        status: str | None = None,
+        cursor_agent_id: str | None = None,
+        linked_thread_id: UUID | str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "id": str(run_id),
+            "slug": slug,
+            "project_slug": slug,
+            "thread_id": str(thread_id),
+            "run_id": str(run_id),
+        }
+        json_body: dict[str, Any] = {}
+        if prompt is not None:
+            body["prompt"] = prompt
+            json_body["prompt"] = prompt
+        if status is not None:
+            body["status"] = status
+            json_body["status"] = status
+        if cursor_agent_id is not None:
+            body["cursor_agent_id"] = cursor_agent_id
+            json_body["cursor_agent_id"] = cursor_agent_id
+        if linked_thread_id is not None:
+            body["linked_thread_id"] = str(linked_thread_id)
+            json_body["thread_id"] = str(linked_thread_id)
+        if meta is not None:
+            body["meta"] = meta
+            json_body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/agents/{run_id}",
+            action="update this project thread agent",
             body=body,
             json=json_body,
         )

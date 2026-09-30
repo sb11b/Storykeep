@@ -1876,6 +1876,52 @@ def project_agent_owned(db: Session, user: User, slug: str, run_id: UUID) -> Jun
     return row
 
 
+def project_thread_agent_owned(
+    db: Session, user: User, slug: str, thread_id: UUID, run_id: UUID
+) -> JuniorAgentRun:
+    """One agent run on a thread that belongs to this project. 404 otherwise."""
+    project = get_project(db, user, slug)
+    project_thread_owned(db, user, slug, thread_id)
+    row = agent_run_owned(db, user, run_id)
+    if row.thread_id != thread_id or row.project_slug != project.slug:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent run not found")
+    return row
+
+
+def update_project_thread_agent(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    run_id: UUID,
+    *,
+    prompt: str | None = None,
+    status_value: str | None = None,
+    cursor_agent_id: str | None = None,
+    thread_id_value: UUID | None = None,
+    meta: dict[str, Any] | None = None,
+    set_status: bool = False,
+    set_cursor_agent_id: bool = False,
+    set_thread_id: bool = False,
+    set_meta: bool = False,
+) -> JuniorAgentRun:
+    project_thread_agent_owned(db, user, slug, thread_id, run_id)
+    return update_agent_run(
+        db,
+        user,
+        run_id,
+        prompt=prompt,
+        status_value=status_value,
+        cursor_agent_id=cursor_agent_id,
+        thread_id=thread_id_value,
+        meta=meta,
+        set_status=set_status,
+        set_cursor_agent_id=set_cursor_agent_id,
+        set_thread_id=set_thread_id,
+        set_meta=set_meta,
+    )
+
+
 def thread_agent_owned(db: Session, user: User, thread_id: UUID, run_id: UUID) -> JuniorAgentRun:
     thread_owned(db, user, thread_id)
     row = agent_run_owned(db, user, run_id)
