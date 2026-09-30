@@ -19,7 +19,8 @@ Check these:
 - SQL is idempotent. No `DROP TABLE`. Do not re-run migrations.
 - The owner email stays `angry.tune8751@fastmail.com`.
 - The diff does not print secrets, tokens, or `DATABASE_URL`.
-- The change does not push to `main`. It opens a pull request into `main` and does not merge it.
+- The change does not push to `main`. It opens a pull request into `main` and does not merge it. It does not approve the pull request.
+- Bugbot, Security, and PR Routing & Approval are already enabled. Rollouts stays disabled. The diff does not enable Rollouts or automatic pull request approval.
 - Do not merge steve-bitsko Cursor PR #2.
 - Tests cover the behavior that changed.
 

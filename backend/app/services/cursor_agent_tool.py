@@ -142,13 +142,19 @@ _AUTO_PR_RE = re.compile(
 )
 _BUGBOT_PR_NOTE = (
     "\n\nWhen this run pushes a cursor/* branch, open a pull request into main. "
-    "Bugbot reviews that pull request automatically. Do not merge the pull request. "
-    "Do not push to main."
+    "Bugbot reviews that pull request automatically. "
+    "Security is already enabled and reviews that same pull request. "
+    "PR Routing & Approval is already enabled and may assign reviewers. "
+    "Leave automatic approval off. Do not approve the pull request. "
+    "Do not merge the pull request. Do not push to main. "
+    "Rollouts stays disabled. Do not enable Rollouts and do not add deploy hooks for it."
 )
 _SECURITY_PUSH_NOTE = (
     "\n\nBefore every git push, run the Security Review agent on the diff you are about to push. "
     "Wait until that review finishes. Put its findings in the pull request body. "
-    "Do not push when the review reports a high-severity issue."
+    "Do not push when the review reports a high-severity issue. "
+    "Cursor Security is already enabled. Do not ask Steve to enable it, "
+    "and do not enable the scheduled Vulnerability Scanner."
 )
 _SENIOR_REVIEW_NOTE = (
     "\n\nBefore every git push, delegate the diff to the senior-reviewer subagent "

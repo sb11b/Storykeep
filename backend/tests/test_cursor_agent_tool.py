@@ -470,7 +470,12 @@ class CursorAgentToolTests(unittest.TestCase):
         payload = mock_client.request.call_args.kwargs["json"]
         self.assertTrue(payload["prompt"]["text"].startswith("Add deploy polling tests"))
         self.assertIn("Bugbot reviews that pull request automatically", payload["prompt"]["text"])
+        self.assertIn("Security is already enabled", payload["prompt"]["text"])
+        self.assertIn("PR Routing & Approval is already enabled", payload["prompt"]["text"])
+        self.assertIn("Leave automatic approval off", payload["prompt"]["text"])
+        self.assertIn("Rollouts stays disabled", payload["prompt"]["text"])
         self.assertIn("Before every git push, run the Security Review agent", payload["prompt"]["text"])
+        self.assertIn("Do not ask Steve to enable it", payload["prompt"]["text"])
         self.assertIn("senior-reviewer subagent", payload["prompt"]["text"])
         self.assertTrue(payload.get("autoCreatePR"))
         self.assertEqual(payload["repos"][0]["startingRef"], "main")
