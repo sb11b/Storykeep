@@ -347,6 +347,67 @@ def update_project_session(
     )
 
 
+def _project_session_venue(
+    db: Session, user: User, project: JuniorProject, venue: str | None
+) -> str:
+    """Venue for a project session. It must match a thread tied to the project."""
+    venues = project_session_venues(db, user, project)
+    if venue is not None:
+        chosen = normalize_venue(venue)
+        if chosen not in venues:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        return chosen
+    for thread_id in project_search_thread_ids(db, user, project):
+        thread = db.get(JuniorThread, thread_id)
+        if thread is None or thread.user_id != user.id or not thread.venue_last:
+            continue
+        if thread.venue_last in venues:
+            return thread.venue_last
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+
+def list_project_sessions_page(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    limit: int | None = None,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorSession], str | None]:
+    """Page sessions whose venue matches a thread tied to this project.
+
+    404 when the project is missing. An existing project with no tied venues
+    returns an empty page.
+    """
+    project = get_project(db, user, slug)
+    return list_sessions_page(
+        db,
+        user,
+        limit=PAGE_DEFAULT if limit is None else limit,
+        cursor=cursor,
+        before_id=before_id,
+        venues=project_session_venues(db, user, project),
+    )
+
+
+def touch_project_session(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    venue: str | None = None,
+    device_label: str | None = None,
+) -> JuniorSession:
+    """Heartbeat a session on this project. Replay stays on the project route.
+
+    404 when the project is missing or the venue does not match a project thread.
+    """
+    project = get_project(db, user, slug)
+    chosen = _project_session_venue(db, user, project, venue)
+    return touch_session(db, user, chosen, device_label)
+
+
 def update_project_thread_session(
     db: Session,
     user: User,
@@ -732,18 +793,27 @@ def list_sessions_page(
     cursor: UUID | str | None = None,
     before_id: UUID | str | None = None,
     venue: str | None = None,
+    venues: set[str] | None = None,
 ) -> tuple[list[JuniorSession], str | None]:
+    if venues is not None and not venues:
+        return [], None
     cap = clamp_page_limit(limit)
     stmt = select(JuniorSession).where(JuniorSession.user_id == user.id)
-    if venue:
-        stmt = stmt.where(JuniorSession.venue == normalize_venue(venue))
+    venue_value = normalize_venue(venue) if venue else None
+    if venue_value:
+        stmt = stmt.where(JuniorSession.venue == venue_value)
+    if venues:
+        stmt = stmt.where(JuniorSession.venue.in_(tuple(venues)))
     marker = _as_uuid(before_id) or _as_uuid(cursor)
     if marker is not None:
-        ref = db.scalar(
-            select(JuniorSession).where(
-                JuniorSession.user_id == user.id, JuniorSession.id == marker
-            )
+        ref_stmt = select(JuniorSession).where(
+            JuniorSession.user_id == user.id, JuniorSession.id == marker
         )
+        if venue_value:
+            ref_stmt = ref_stmt.where(JuniorSession.venue == venue_value)
+        if venues:
+            ref_stmt = ref_stmt.where(JuniorSession.venue.in_(tuple(venues)))
+        ref = db.scalar(ref_stmt)
         if ref is not None:
             stmt = stmt.where(
                 or_(
