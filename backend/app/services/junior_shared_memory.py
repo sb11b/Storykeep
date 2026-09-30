@@ -300,6 +300,53 @@ def project_thread_session_owned(
     return thread_session_owned(db, user, thread_id, session_id)
 
 
+def project_session_venues(db: Session, user: User, project: JuniorProject) -> set[str]:
+    """Venues of threads tied to this project. A session is on the project when it shares one."""
+    venues: set[str] = set()
+    for thread_id in project_search_thread_ids(db, user, project):
+        thread = db.get(JuniorThread, thread_id)
+        if thread is None or thread.user_id != user.id or not thread.venue_last:
+            continue
+        venues.add(thread.venue_last)
+    return venues
+
+
+def project_session_owned(
+    db: Session, user: User, slug: str, session_id: UUID
+) -> JuniorSession:
+    """One owner session whose venue matches a thread on this project.
+
+    Sessions have no project column. 404 when the project is missing or no
+    project thread uses that venue.
+    """
+    project = get_project(db, user, slug)
+    row = session_owned(db, user, session_id)
+    if row.venue not in project_session_venues(db, user, project):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return row
+
+
+def update_project_session(
+    db: Session,
+    user: User,
+    slug: str,
+    session_id: UUID,
+    *,
+    venue: str | None = None,
+    device_label: str | None = None,
+    set_device_label: bool = False,
+) -> JuniorSession:
+    project_session_owned(db, user, slug, session_id)
+    return update_session(
+        db,
+        user,
+        session_id,
+        venue=venue,
+        device_label=device_label,
+        set_device_label=set_device_label,
+    )
+
+
 def update_project_thread_session(
     db: Session,
     user: User,

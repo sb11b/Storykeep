@@ -1912,6 +1912,48 @@ def update_project_thread_session(
 
 
 @router.get(
+    "/projects/{slug}/sessions/{session_id}",
+    response_model=JuniorSessionOut,
+)
+def get_project_session(
+    slug: str,
+    session_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSessionOut:
+    """One session on this project. Venue must match a thread tied to the project."""
+    return JuniorSessionOut.model_validate(store.project_session_owned(db, user, slug, session_id))
+
+
+@router.post(
+    "/projects/{slug}/sessions/{session_id}",
+    response_model=JuniorSessionOut,
+)
+def update_project_session(
+    slug: str,
+    session_id: UUID,
+    payload: JuniorSessionIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSessionOut:
+    """Update a session on this project. Replay stays on this route, not POST /sessions/{id}."""
+    incoming = payload or JuniorSessionIn()
+    fields = incoming.model_fields_set
+    row = store.update_project_session(
+        db,
+        user,
+        slug,
+        session_id,
+        venue=incoming.venue if "venue" in fields else None,
+        device_label=incoming.device_label if "device_label" in fields else None,
+        set_device_label="device_label" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSessionOut.model_validate(row)
+
+
+@router.get(
     "/projects/{slug}/threads/{thread_id}/search",
     response_model=list[JuniorSharedSearchHitOut],
 )

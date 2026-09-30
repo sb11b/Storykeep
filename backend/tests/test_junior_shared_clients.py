@@ -110,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_matches_build(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-project-thread-sessions-page-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-project-session-get-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -1370,6 +1370,95 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertNotIn("venue", replay_http.json_bodies[0])
         self.assertNotIn(("POST", f"/api/v1/junior/sessions/{session_id}"), replay_http.calls)
         self.assertFalse(path.exists())
+
+    def test_project_session_get_403_and_update_replays(self):
+        session_id = uuid.uuid4()
+        http = _ScriptedHttp([403, 403, 403])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_project_session("storykeep", session_id)
+        self.assertEqual(
+            http.calls[0],
+            ("GET", f"/api/v1/junior/projects/storykeep/sessions/{session_id}"),
+        )
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load this project session", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as updated:
+                phone_client(fail, queue_path=path).update_project_session(
+                    "storykeep",
+                    session_id,
+                    venue="phone",
+                    device_label="junior-mobile-2",
+                )
+        self.assertIn("did not update this project session", updated.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_session_update")
+        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
+        self.assertEqual(restarted.last_failed_post["session_id"], str(session_id))
+        self.assertEqual(restarted.last_failed_post["session_venue"], "phone")
+        self.assertEqual(restarted.last_failed_post["session_device_label"], "junior-mobile-2")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/projects/storykeep/sessions/{session_id}")],
+        )
+        self.assertEqual(replay_http.json_bodies[0]["venue"], "phone")
+        self.assertEqual(replay_http.json_bodies[0]["device_label"], "junior-mobile-2")
+        self.assertNotIn(("POST", f"/api/v1/junior/sessions/{session_id}"), replay_http.calls)
+        self.assertFalse(path.exists())
+
+    def test_project_slug_session_update_stays_off_other_session_routes(self):
+        session_id = uuid.uuid4()
+        thread_id = uuid.uuid4()
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError):
+                phone_client(fail, queue_path=path).update_project_session(
+                    "sessions",
+                    session_id,
+                    device_label="junior-mobile-2",
+                )
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_session_update")
+        replay_http = _ScriptedHttp([200])
+        phone_client(replay_http, queue_path=path).replay_after_login("owner-session")
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/projects/sessions/sessions/{session_id}")],
+        )
+        self.assertNotIn(("POST", f"/api/v1/junior/sessions/{session_id}"), replay_http.calls)
+        self.assertNotIn(
+            ("POST", f"/api/v1/junior/threads/{thread_id}/sessions/{session_id}"),
+            replay_http.calls,
+        )
+
+        threads_path = _queue_path()
+        threads_fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError):
+                phone_client(threads_fail, queue_path=threads_path).update_project_session(
+                    "threads",
+                    session_id,
+                    device_label="junior-mobile-2",
+                )
+        threads_restarted = phone_client(object(), queue_path=threads_path)
+        self.assertEqual(threads_restarted.last_failed_post["kind"], "project_session_update")
+        threads_replay = _ScriptedHttp([200])
+        phone_client(threads_replay, queue_path=threads_path).replay_after_login("owner-session")
+        self.assertEqual(
+            threads_replay.calls,
+            [("POST", f"/api/v1/junior/projects/threads/sessions/{session_id}")],
+        )
+        self.assertNotIn(("POST", f"/api/v1/junior/sessions/{session_id}"), threads_replay.calls)
+        self.assertFalse(any("/threads/" in call[1] and "/projects/" not in call[1] for call in threads_replay.calls))
 
     def test_project_thread_session_get_403_and_update_replays(self):
         thread_id = uuid.uuid4()

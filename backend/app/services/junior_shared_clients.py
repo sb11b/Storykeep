@@ -69,7 +69,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-sessions-page-v1"
+HEALTH_STAMP = "junior-client-project-session-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -218,6 +218,23 @@ def _is_thread_session_create_path(path: str) -> bool:
     if "/projects/" in cleaned or "/sessions/" in cleaned:
         return False
     return "/threads/" in cleaned and cleaned.endswith("/sessions")
+
+
+def _is_project_session_update_path(path: str) -> bool:
+    """True only for /projects/{slug}/sessions/{session_id}.
+
+    The slug may be sessions or threads. A project-thread session path is not this route.
+    POST /sessions/{id} is not this route.
+    """
+    cleaned = (path or "").rstrip("/")
+    marker = "/projects/"
+    start = cleaned.find(marker)
+    if start < 0:
+        return False
+    parts = cleaned[start + len(marker) :].split("/")
+    if len(parts) != 3 or not parts[0] or parts[1] != "sessions" or not parts[2]:
+        return False
+    return True
 
 
 def _is_project_thread_session_update_path(path: str) -> bool:
@@ -691,6 +708,8 @@ class SharedMemoryClient:
         if kind:
             return kind
         path = str(post.get("path") or "")
+        if _is_project_session_update_path(path):
+            return "project_session_update"
         if _is_project_thread_session_update_path(path):
             return "project_thread_session_update"
         if _is_project_thread_session_create_path(path):
@@ -1098,6 +1117,15 @@ class SharedMemoryClient:
                     kind=post.get("memory_kind") or post.get("fact_kind"),
                     source_thread=post.get("source_thread"),
                 )
+        if kind == "project_session_update":
+            session_id = post.get("session_id") or post.get("id")
+            if session_id:
+                return self.update_project_session(
+                    str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                    session_id,
+                    venue=post.get("session_venue"),
+                    device_label=post.get("session_device_label"),
+                )
         if kind == "project_thread_session_update" and thread_id:
             session_id = post.get("session_id") or post.get("id")
             if session_id:
@@ -1179,7 +1207,9 @@ class SharedMemoryClient:
         self.last_user_error = exc.user_message
         if self._replaying:
             return
-        if _is_project_thread_session_update_path(path):
+        if _is_project_session_update_path(path):
+            kind = "project_session_update"
+        elif _is_project_thread_session_update_path(path):
             kind = "project_thread_session_update"
         elif _is_project_thread_session_create_path(path):
             kind = "project_thread_session"
@@ -1359,6 +1389,7 @@ class SharedMemoryClient:
                 "thread_session",
                 "project_thread_session_update",
                 "project_thread_session",
+                "project_session_update",
             }
             else None,
             "session_device_label": body.get("device_label")
@@ -1368,6 +1399,7 @@ class SharedMemoryClient:
                 "thread_session",
                 "project_thread_session_update",
                 "project_thread_session",
+                "project_session_update",
             }
             else None,
             "action": exc.action,
@@ -2645,6 +2677,40 @@ class SharedMemoryClient:
         return self._read(
             f"{API_PREFIX}/threads/{thread_id}/sessions/{session_id}",
             action="load this thread session",
+        )
+
+    def get_project_session(self, slug: str, session_id: UUID | str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/sessions/{session_id}",
+            action="load this project session",
+        )
+
+    def update_project_session(
+        self,
+        slug: str,
+        session_id: UUID | str,
+        *,
+        venue: str | None = None,
+        device_label: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "slug": slug,
+            "project_slug": slug,
+            "session_id": str(session_id),
+        }
+        json_body: dict[str, Any] = {}
+        if venue is not None:
+            body["venue"] = venue
+            json_body["venue"] = venue
+        if device_label is not None:
+            body["device_label"] = device_label
+            json_body["device_label"] = device_label
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/sessions/{session_id}",
+            action="update this project session",
+            body=body,
+            json=json_body,
         )
 
     def get_project_thread_session(

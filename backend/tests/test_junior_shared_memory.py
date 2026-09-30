@@ -2719,6 +2719,83 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(touched.call_args.kwargs["venue"], "phone")
         self.assertEqual(touched.call_args.kwargs["device_label"], "junior-mobile")
 
+    def test_project_session_owned_requires_project_venue(self):
+        owner = _owner()
+        session_id = uuid.uuid4()
+        db = MagicMock()
+        with patch.object(
+            store,
+            "get_project",
+            side_effect=HTTPException(status_code=404, detail="Project not found"),
+        ):
+            with self.assertRaises(HTTPException) as missing:
+                store.project_session_owned(db, owner, "missing", session_id)
+        self.assertEqual(missing.exception.status_code, 404)
+
+        project = SimpleNamespace(id=uuid.uuid4(), slug="storykeep", meta={})
+        session = SimpleNamespace(id=session_id, venue="phone", user_id=owner.id)
+        thread = SimpleNamespace(id=uuid.uuid4(), user_id=owner.id, venue_last="phone")
+        with patch.object(store, "get_project", return_value=project), patch.object(
+            store, "session_owned", return_value=session
+        ), patch.object(store, "project_search_thread_ids", return_value=[thread.id]):
+            db.get.return_value = thread
+            found = store.project_session_owned(db, owner, "storykeep", session_id)
+        self.assertIs(found, session)
+
+        other = SimpleNamespace(id=thread.id, user_id=owner.id, venue_last="windows")
+        with patch.object(store, "get_project", return_value=project), patch.object(
+            store, "session_owned", return_value=session
+        ), patch.object(store, "project_search_thread_ids", return_value=[thread.id]):
+            db.get.return_value = other
+            with self.assertRaises(HTTPException) as mismatch:
+                store.project_session_owned(db, owner, "storykeep", session_id)
+        self.assertEqual(mismatch.exception.status_code, 404)
+
+    def test_project_session_routes(self):
+        now = datetime.now(timezone.utc)
+        session = SimpleNamespace(
+            id=uuid.uuid4(),
+            venue="phone",
+            device_label="junior-mobile",
+            last_seen_at=now,
+            created_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.project_session_owned",
+            return_value=session,
+        ) as owned:
+            got = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/sessions/{session.id}"
+            )
+        self.assertEqual(got.status_code, 200)
+        self.assertEqual(got.json()["venue"], "phone")
+        self.assertEqual(owned.call_args.args[2], "storykeep")
+        self.assertEqual(owned.call_args.args[3], session.id)
+
+        renamed = SimpleNamespace(
+            id=session.id,
+            venue="phone",
+            device_label="junior-mobile-2",
+            last_seen_at=now,
+            created_at=now,
+        )
+        with patch(
+            "app.routers.junior_shared.store.update_project_session",
+            return_value=renamed,
+        ) as updated:
+            posted = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/sessions/{session.id}",
+                json={"device_label": "junior-mobile-2"},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["device_label"], "junior-mobile-2")
+        self.assertEqual(updated.call_args.args[2], "storykeep")
+        self.assertEqual(updated.call_args.args[3], session.id)
+        self.assertTrue(updated.call_args.kwargs["set_device_label"])
+        self.assertEqual(updated.call_args.kwargs["device_label"], "junior-mobile-2")
+        self.assertIsNone(updated.call_args.kwargs["venue"])
+
     def test_project_thread_sessions_page_uses_project_thread(self):
         owner = _owner()
         thread = SimpleNamespace(id=uuid.uuid4(), venue_last="phone")
