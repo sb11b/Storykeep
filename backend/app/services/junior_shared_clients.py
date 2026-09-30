@@ -33,6 +33,7 @@ Failed project searches replay on POST /projects/{slug}/search. GET /projects/{s
 Failed project search-hit updates replay on POST /projects/{slug}/search/{id}. GET /projects/{slug}/search/{id} loads one search hit on that project.
 Failed project context pins replay on POST /projects/{slug}/agent-context. GET /projects/{slug}/agent-context loads one context pack on that project.
 Failed project-memory updates replay on POST /projects/{slug}/memories/{id}. GET /projects/{slug}/memories/{id} loads one memory on that project.
+Failed project-memory creates replay on POST /projects/{slug}/memories. GET /projects/{slug}/memories pages memories on that project.
 """
 
 from __future__ import annotations
@@ -57,7 +58,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-message-notice-v1"
+HEALTH_STAMP = "junior-client-project-memories-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -152,6 +153,11 @@ def _is_thread_memory_update_path(path: str) -> bool:
 def _is_project_memory_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     return "/projects/" in cleaned and "/memories/" in cleaned
+
+
+def _is_project_memory_create_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and cleaned.endswith("/memories")
 
 
 def _is_memory_update_path(path: str) -> bool:
@@ -461,6 +467,8 @@ class SharedMemoryClient:
             return "project_context_update"
         if _is_project_memory_update_path(path):
             return "project_memory_update"
+        if _is_project_memory_create_path(path):
+            return "project_memory"
         if _is_thread_agent_update_path(path):
             return "thread_agent_update"
         if _is_thread_memory_update_path(path):
@@ -607,6 +615,12 @@ class SharedMemoryClient:
                     kind=post.get("memory_kind") or post.get("fact_kind"),
                     source_thread=post.get("source_thread"),
                 )
+        if kind == "project_memory":
+            return self.create_project_memory(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                str(post.get("content") or text),
+                kind=post.get("memory_kind") or post.get("fact_kind"),
+            )
         if kind == "thread_search_update" and thread_id:
             message_id = post.get("message_id") or post.get("id")
             if message_id:
@@ -745,6 +759,8 @@ class SharedMemoryClient:
             kind = "project_context_update"
         elif _is_project_memory_update_path(path):
             kind = "project_memory_update"
+        elif _is_project_memory_create_path(path):
+            kind = "project_memory"
         elif _is_thread_agent_update_path(path):
             kind = "thread_agent_update"
         elif _is_thread_memory_update_path(path):
@@ -833,6 +849,7 @@ class SharedMemoryClient:
                 "thread_memory",
                 "thread_memory_update",
                 "project_memory_update",
+                "project_memory",
             }
             else None,
             "source_thread": body.get("source_thread"),
@@ -1206,6 +1223,48 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{target}/agent-context",
             action="update this project context",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_memories(
+        self,
+        slug: str,
+        *,
+        kind: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id) or {}
+        if kind:
+            params["kind"] = kind
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/memories",
+            action="load these project memories",
+            **({"params": params} if params else {}),
+        )
+
+    def create_project_memory(
+        self,
+        slug: str,
+        content: str,
+        *,
+        kind: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "slug": slug,
+            "project_slug": slug,
+            "content": content,
+        }
+        json_body: dict[str, Any] = {"content": content}
+        if kind:
+            body["kind"] = kind
+            json_body["kind"] = kind
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/memories",
+            action="save this project memory",
             body=body,
             json=json_body,
         )

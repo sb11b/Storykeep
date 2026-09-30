@@ -110,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_matches_build(self):
-        self.assertEqual(HEALTH_STAMP, "junior-message-notice-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-project-memories-page-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -152,6 +152,7 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertTrue(any(path.endswith("/projects/{slug}/search/{message_id}") for path in junior))
         self.assertTrue(any(path.endswith("/projects/{slug}/agent-context") for path in junior))
         self.assertTrue(any(path.endswith("/projects/{slug}/memories/{memory_id}") for path in junior))
+        self.assertTrue(any(path.endswith("/projects/{slug}/memories") for path in junior))
 
     def test_phone_and_windows_require_login(self):
         client = TestClient(_app())
@@ -1850,6 +1851,46 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertEqual(replay_http.json_bodies[0]["source_thread"], str(source_thread))
         self.assertNotIn(("POST", f"/api/v1/junior/memories/{memory_id}"), replay_http.calls)
         self.assertFalse(any("/threads/" in call[1] for call in replay_http.calls))
+        self.assertFalse(path.exists())
+
+    def test_project_memories_page_403_and_create_replays(self):
+        http = _ScriptedHttp([200, 403, 403, 403])
+        page = _phone(http).get_project_memories("storykeep", limit=2, cursor="abc")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(http.calls[0], ("GET", "/api/v1/junior/projects/storykeep/memories"))
+        self.assertEqual(http.params[0], {"limit": 2, "cursor": "abc"})
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_project_memories("storykeep")
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load these project memories", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as created:
+                phone_client(fail, queue_path=path).create_project_memory(
+                    "storykeep", "Prefers short replies", kind="note"
+                )
+        self.assertIn("did not save this project memory", created.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_memory")
+        self.assertEqual(restarted.last_failed_post["content"], "Prefers short replies")
+        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
+        self.assertEqual(restarted.last_failed_post["memory_kind"], "note")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", "/api/v1/junior/projects/storykeep/memories")],
+        )
+        self.assertEqual(replay_http.json_bodies[0]["content"], "Prefers short replies")
+        self.assertEqual(replay_http.json_bodies[0]["kind"], "note")
+        self.assertNotIn(("POST", "/api/v1/junior/memories"), replay_http.calls)
+        self.assertFalse(any("/threads/" in call[1] for call in replay_http.calls))
+        self.assertFalse(any(call[1].rstrip("/").endswith("/memories/") or "/memories/" in call[1] for call in replay_http.calls))
         self.assertFalse(path.exists())
 
 

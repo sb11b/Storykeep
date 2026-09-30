@@ -204,6 +204,14 @@ class JuniorSharedRouteTests(unittest.TestCase):
             401,
         )
         self.assertEqual(client.get("/api/v1/junior/projects/storykeep/agent-context").status_code, 401)
+        self.assertEqual(client.get("/api/v1/junior/projects/storykeep/memories").status_code, 401)
+        self.assertEqual(
+            client.post(
+                "/api/v1/junior/projects/storykeep/memories",
+                json={"content": "Prefers short replies", "kind": "note"},
+            ).status_code,
+            401,
+        )
         self.assertEqual(
             client.post(
                 "/api/v1/junior/projects/storykeep/agent-context",
@@ -297,6 +305,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", f"/api/v1/junior/projects/storykeep/search/{uuid.uuid4()}"),
             ("GET", "/api/v1/junior/projects/storykeep/agent-context"),
             ("POST", "/api/v1/junior/projects/storykeep/agent-context"),
+            ("GET", "/api/v1/junior/projects/storykeep/memories"),
+            ("POST", "/api/v1/junior/projects/storykeep/memories"),
         ):
             response = client.request(
                 method,
@@ -744,6 +754,47 @@ class JuniorSharedServiceTests(unittest.TestCase):
         ]
         with self.assertRaises(HTTPException) as caught:
             store.thread_search_hit_owned(db, owner, thread_id, message_id)
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_list_project_memories_uses_project_threads(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        project = SimpleNamespace(slug="storykeep", meta={})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[thread_id],
+        ), patch(
+            "app.services.junior_shared_memory.list_memories_page",
+            return_value=([], None),
+        ) as listed:
+            rows, cursor = store.list_project_memories_page(object(), owner, "storykeep", limit=2)
+        self.assertEqual(rows, [])
+        self.assertIsNone(cursor)
+        self.assertEqual(listed.call_args.kwargs["source_threads"], [thread_id])
+        self.assertEqual(listed.call_args.kwargs["limit"], 2)
+
+    def test_create_project_memory_uses_pinned_thread(self):
+        owner = _owner()
+        pinned = uuid.uuid4()
+        other = uuid.uuid4()
+        saved = SimpleNamespace(id=uuid.uuid4(), content="keep")
+        project = SimpleNamespace(slug="storykeep", meta={"context_thread_id": str(pinned)})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[pinned, other],
+        ), patch("app.services.junior_shared_memory.upsert_memory", return_value=saved) as created:
+            row = store.create_project_memory(object(), owner, "storykeep", kind="note", content="keep")
+        self.assertIs(row, saved)
+        self.assertEqual(created.call_args.kwargs["source_thread"], pinned)
+        self.assertEqual(created.call_args.kwargs["content"], "keep")
+        self.assertIsNone(created.call_args.kwargs["memory_id"])
+
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[],
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                store.create_project_memory(object(), owner, "storykeep", kind="note", content="keep")
         self.assertEqual(caught.exception.status_code, 404)
 
     def test_project_memory_owned_is_404_when_not_on_project(self):
@@ -1593,6 +1644,44 @@ class JuniorProjectAndAgentTests(unittest.TestCase):
         self.assertEqual(pinned.call_args.kwargs["query"], "finance")
         self.assertTrue(pinned.call_args.kwargs["set_thread_id"])
         self.assertEqual(str(pinned.call_args.kwargs["thread_id"]), str(thread_id))
+
+    def test_project_memories_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        fact = SimpleNamespace(
+            id=uuid.uuid4(),
+            kind="note",
+            content="Prefers short replies",
+            source_thread=thread_id,
+            created_at=now,
+            updated_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.list_project_memories_page",
+            return_value=([fact], str(fact.id)),
+        ) as listed:
+            page = TestClient(app).get(
+                "/api/v1/junior/projects/storykeep/memories",
+                params={"limit": 1, "cursor": str(fact.id), "kind": "note"},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["content"], "Prefers short replies")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(fact.id))
+        self.assertEqual(listed.call_args.args[2], "storykeep")
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+        self.assertEqual(listed.call_args.kwargs["kind"], "note")
+
+        with patch("app.routers.junior_shared.store.create_project_memory", return_value=fact) as created:
+            saved = TestClient(app).post(
+                "/api/v1/junior/projects/storykeep/memories",
+                json={"content": "Prefers short replies", "kind": "note"},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["source_thread"], str(thread_id))
+        self.assertEqual(created.call_args.args[2], "storykeep")
+        self.assertEqual(created.call_args.kwargs["content"], "Prefers short replies")
+        self.assertEqual(created.call_args.kwargs["kind"], "note")
 
     def test_update_project_agent_context_uses_project_slug(self):
         thread_id = uuid.uuid4()

@@ -966,22 +966,72 @@ def list_memories(db: Session, user: User, *, kind: str | None = None) -> list[J
     return rows
 
 
+def list_project_memories_page(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    kind: str | None = None,
+    limit: int | None = PAGE_DEFAULT,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorMemoryFact], str | None]:
+    project = get_project(db, user, slug)
+    thread_ids = project_search_thread_ids(db, user, project)
+    return list_memories_page(
+        db,
+        user,
+        kind=kind,
+        source_threads=thread_ids,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+
+
+def create_project_memory(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    kind: str | None,
+    content: str,
+) -> JuniorMemoryFact:
+    project = get_project(db, user, slug)
+    thread_ids = project_search_thread_ids(db, user, project)
+    if not thread_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return upsert_memory(
+        db,
+        user,
+        memory_id=None,
+        kind=kind,
+        content=content,
+        source_thread=thread_ids[0],
+    )
+
+
 def list_memories_page(
     db: Session,
     user: User,
     *,
     kind: str | None = None,
     source_thread: UUID | None = None,
+    source_threads: list[UUID] | None = None,
     limit: int | None = PAGE_DEFAULT,
     cursor: UUID | str | None = None,
     before_id: UUID | str | None = None,
 ) -> tuple[list[JuniorMemoryFact], str | None]:
+    if source_threads is not None and not source_threads:
+        return [], None
     cap = clamp_page_limit(limit)
     stmt = select(JuniorMemoryFact).where(JuniorMemoryFact.user_id == user.id)
     if kind:
         stmt = stmt.where(JuniorMemoryFact.kind == normalize_kind(kind))
     if source_thread is not None:
         stmt = stmt.where(JuniorMemoryFact.source_thread == source_thread)
+    if source_threads is not None:
+        stmt = stmt.where(JuniorMemoryFact.source_thread.in_(source_threads))
     marker = _as_uuid(before_id) or _as_uuid(cursor)
     if marker is not None:
         ref_stmt = select(JuniorMemoryFact).where(
@@ -989,6 +1039,8 @@ def list_memories_page(
         )
         if source_thread is not None:
             ref_stmt = ref_stmt.where(JuniorMemoryFact.source_thread == source_thread)
+        if source_threads is not None:
+            ref_stmt = ref_stmt.where(JuniorMemoryFact.source_thread.in_(source_threads))
         ref = db.scalar(ref_stmt)
         if ref is not None:
             stmt = stmt.where(
