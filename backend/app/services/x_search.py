@@ -128,6 +128,14 @@ def lookup(message: str) -> XOutcome:
     return last
 
 
+def _x_search_tool(*, watch_video: bool) -> dict[str, object]:
+    """view_x_video is not a Responses tool type. Video watch is a flag on x_search."""
+    tool: dict[str, object] = {"type": X_SEARCH_TOOL}
+    if watch_video:
+        tool["enable_video_understanding"] = True
+    return tool
+
+
 def _lookup_once(query: str, *, watch_video: bool) -> XOutcome:
     key = (settings.xai_api_key or "").strip()
     payload = {
@@ -139,10 +147,7 @@ def _lookup_once(query: str, *, watch_video: bool) -> XOutcome:
         "store": False,
         "max_output_tokens": 1200,
         "reasoning": {"effort": "low"},
-        "tools": [
-            {"type": X_SEARCH_TOOL, "enable_video_understanding": watch_video},
-            {"type": VIEW_X_VIDEO_TOOL},
-        ],
+        "tools": [_x_search_tool(watch_video=watch_video)],
     }
     timeout = httpx.Timeout(
         LOOKUP_TIMEOUT_SEC,
@@ -226,7 +231,11 @@ def _citations(body: dict) -> tuple[str, ...]:
 
 def _watched_video(body: dict) -> bool:
     for item in body.get("output") or []:
-        if isinstance(item, dict) and "view_x_video" in str(item.get("type") or ""):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("type") or "")
+        name = str(item.get("name") or "")
+        if "view_x_video" in kind or name == VIEW_X_VIDEO_TOOL:
             return True
     usage = body.get("usage") if isinstance(body.get("usage"), dict) else {}
     details = usage.get("server_side_tool_usage_details") if isinstance(usage, dict) else {}
@@ -245,7 +254,7 @@ def _fail(http_status: int, reason: str) -> str:
 
 
 def _detail_from_http(http_status: int, raw: str) -> str:
-    text = redact_secrets((raw or "").strip())[:300]
+    text = redact_secrets((raw or "").strip())[:500]
     reason = "error"
     if http_status == 401:
         reason = "auth"
@@ -253,4 +262,25 @@ def _detail_from_http(http_status: int, raw: str) -> str:
         reason = "quota"
     elif http_status in {408, 504}:
         reason = "timeout"
+    else:
+        message = _error_message(text)
+        if message:
+            reason = message[:140]
     return _fail(http_status, reason)
+
+
+def _error_message(text: str) -> str:
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    err = parsed.get("error")
+    if isinstance(err, str):
+        return err.strip()
+    if isinstance(err, dict):
+        message = err.get("message") or err.get("code")
+        if isinstance(message, str):
+            return message.strip()
+    return ""
