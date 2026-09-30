@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     github_token: str = ""
     github_repo: str = "sb11b/Storykeep-"
     cursor_api_key: str = ""
+    cursor_analytics_key: str = ""
     cursor_agent_repo: str = ""
     cursor_agent_branch: str = "main"
     cursor_api_url: str = "https://api.cursor.com"

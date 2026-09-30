@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 PENDING = "pending"
 POSTED = "posted"
+BUGBOT = "bugbot"
 STALE_AFTER = timedelta(hours=3)
 POLL_LIMIT = 20
 
@@ -60,7 +61,7 @@ def record_watch(
         db.close()
 
 
-def _post_follow_up(db: Session, row: CursorAgentWatch, text: str) -> None:
+def _post_follow_up(db: Session, row: CursorAgentWatch, text: str, *, status: str = POSTED) -> None:
     conversation = grok_store.lookup_owned_conversation(db, SimpleUser(row.user_id), row.conversation_id)
     if conversation is None:
         row.status = POSTED
@@ -72,7 +73,7 @@ def _post_follow_up(db: Session, row: CursorAgentWatch, text: str) -> None:
         role="assistant",
         content=stamp_assistant_content(text),
     )
-    row.status = POSTED
+    row.status = status
     row.updated_at = datetime.now(timezone.utc)
 
 
@@ -81,12 +82,33 @@ class SimpleUser:
         self.id = user_id
 
 
+def _poll_bugbot(db: Session, row: CursorAgentWatch, *, now: datetime, stale: bool) -> None:
+    snapshot = cursor_agent_tool.fetch_run(row.agent_id, row.run_id)
+    if snapshot.run_id and snapshot.run_id != row.run_id:
+        row.run_id = snapshot.run_id
+    section, done = cursor_agent_tool.bugbot_section(snapshot.pr_url)
+    if done and section:
+        _post_follow_up(db, row, section)
+        return
+    if stale:
+        _post_follow_up(
+            db,
+            row,
+            "Review analytics\n\nBugbot has not finished a review for this pull request yet.",
+        )
+        return
+    row.updated_at = now
+
+
 def poll_one(db: Session, row: CursorAgentWatch, *, now: datetime | None = None) -> None:
     instant = now or datetime.now(timezone.utc)
     created = row.created_at
     if created is not None and created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
     stale = created is not None and instant - created >= STALE_AFTER
+    if row.status == BUGBOT:
+        _poll_bugbot(db, row, now=instant, stale=stale)
+        return
     snapshot = cursor_agent_tool.fetch_run(row.agent_id, row.run_id)
     if snapshot.run_id and snapshot.run_id != row.run_id:
         row.run_id = snapshot.run_id
@@ -110,16 +132,22 @@ def poll_one(db: Session, row: CursorAgentWatch, *, now: datetime | None = None)
     if not snapshot.reachable and not stale:
         row.updated_at = instant
         return
+    bugbot_text = None
+    bugbot_waiting = False
+    if (snapshot.status or "").upper() == "FINISHED":
+        bugbot_text, bugbot_done = cursor_agent_tool.bugbot_section(snapshot.pr_url)
+        bugbot_waiting = not bugbot_done
     text = cursor_agent_tool.format_follow_up(
         snapshot,
         agent_url=row.agent_url,
         starting_branch=row.starting_branch or "main",
         stale=stale and (snapshot.status or "").upper() not in cursor_agent_tool.TERMINAL_RUN_STATUSES,
+        bugbot_text=bugbot_text,
     )
     if text is None:
         row.updated_at = instant
         return
-    _post_follow_up(db, row, text)
+    _post_follow_up(db, row, text, status=BUGBOT if bugbot_waiting else POSTED)
 
 
 def poll_agent_watches() -> None:
@@ -128,7 +156,7 @@ def poll_agent_watches() -> None:
     db = SessionLocal()
     try:
         rows = db.scalars(
-            select(CursorAgentWatch).where(CursorAgentWatch.status == PENDING).limit(POLL_LIMIT)
+            select(CursorAgentWatch).where(CursorAgentWatch.status.in_((PENDING, BUGBOT))).limit(POLL_LIMIT)
         ).all()
         for row in rows:
             try:

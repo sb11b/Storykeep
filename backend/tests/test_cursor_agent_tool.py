@@ -467,6 +467,89 @@ class CursorAgentToolTests(unittest.TestCase):
         sent = mock_client.request.call_args.kwargs["json"]["prompt"]["text"]
         self.assertIn("Bugbot reviews that pull request automatically", sent)
 
+    def test_bugbot_review_text_lists_commit_cost_and_findings(self) -> None:
+        text = cursor_agent_tool.format_bugbot_reviews(
+            [
+                {
+                    "commit_sha": "9f3c2a1b7d8e4f5061728394a5b6c7d8e9f0a1b2",
+                    "pr_number": 42,
+                    "bugs_found": 2,
+                    "cost_cents": 42.5,
+                    "dry_run": False,
+                    "publication_status": "posted",
+                    "bugs": [
+                        {"comment_id": "2147483999", "resolution_status": "resolved", "severity": "high"},
+                        {"comment_id": "2147484000", "resolution_status": "unresolved", "severity": "medium"},
+                    ],
+                }
+            ]
+        )
+        self.assertIn("Review analytics", text)
+        self.assertIn("Commit: 9f3c2a1b7d8e", text)
+        self.assertIn("Findings: 2", text)
+        self.assertIn("Cost: 42.5 cents", text)
+        self.assertIn("high — resolved — comment 2147483999", text)
+        self.assertIn("medium — unresolved — comment 2147484000", text)
+
+    def test_dry_run_review_lists_title_and_location(self) -> None:
+        text = cursor_agent_tool.format_bugbot_reviews(
+            [
+                {
+                    "commit_sha": "abcdef123456",
+                    "bugs_found": 1,
+                    "cost_cents": None,
+                    "dry_run": True,
+                    "bugs": [
+                        {
+                            "comment_id": None,
+                            "resolution_status": None,
+                            "severity": "medium",
+                            "title": "Unbounded retry loop",
+                            "description": "retry() recurses without a ceiling.",
+                            "locations": [{"file": "src/net.ts", "start_line": 5, "end_line": 9}],
+                        }
+                    ],
+                }
+            ]
+        )
+        self.assertIn("Dry run", text)
+        self.assertIn("Cost: not billed", text)
+        self.assertIn("Unbounded retry loop", text)
+        self.assertIn("src/net.ts:5-9", text)
+        self.assertNotIn("comment None", text)
+
+    @patch("app.services.cursor_agent_tool._analytics_get")
+    def test_bugbot_section_reads_the_pull_request(self, analytics: MagicMock) -> None:
+        analytics.return_value = (
+            200,
+            {
+                "data": [
+                    {
+                        "commit_sha": "abc123def456",
+                        "pr_number": 12,
+                        "bugs_found": 1,
+                        "cost_cents": 100,
+                        "dry_run": False,
+                        "bugs": [{"comment_id": "9", "resolution_status": "resolved", "severity": "low"}],
+                    }
+                ]
+            },
+        )
+        text, done = cursor_agent_tool.bugbot_section("https://github.com/sb11b/Storykeep-/pull/12")
+        self.assertTrue(done)
+        self.assertIn("Commit: abc123def456", text)
+        self.assertIn("Cost: $1.00", text)
+        params = analytics.call_args.args[1]
+        self.assertEqual(params["repo"], "github.com/sb11b/Storykeep-")
+        self.assertEqual(params["prNumber"], "12")
+
+    @patch("app.services.cursor_agent_tool._analytics_get", return_value=(403, {"message": "no"}))
+    def test_bugbot_section_reports_missing_scope(self, analytics: MagicMock) -> None:
+        text, done = cursor_agent_tool.bugbot_section("https://github.com/sb11b/Storykeep-/pull/3")
+        self.assertTrue(done)
+        self.assertIn("read:*", text)
+        analytics.assert_called_once()
+
     @patch("app.services.cursor_agent_tool.settings")
     def test_start_agent_not_configured(self, mock_settings: MagicMock) -> None:
         mock_settings.cursor_api_key = ""

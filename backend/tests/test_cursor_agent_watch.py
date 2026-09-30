@@ -48,11 +48,19 @@ class AgentFollowUpTests(unittest.TestCase):
         self.assertIn("status ERROR", text)
         self.assertNotIn("git merge", text)
 
+    @patch(
+        "app.services.cursor_agent_tool.bugbot_section",
+        return_value=(
+            "Review analytics\n\nPosted review\nCommit: 9f3c2a1b7d8e\nFindings: 2\nCost: 42.5 cents\n"
+            "1. high — resolved — comment 2147483999",
+            True,
+        ),
+    )
     @patch("app.services.github_tool.open_pull_request", return_value="https://github.com/sb11b/Storykeep-/pull/99")
     @patch("app.services.cursor_agent_watch.grok_store.append_message")
     @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")
     @patch("app.services.cursor_agent_watch.cursor_agent_tool.fetch_run")
-    def test_poll_posts_once(self, fetch_run, lookup, append_message, open_pull_request):
+    def test_poll_posts_once(self, fetch_run, lookup, append_message, open_pull_request, bugbot_section):
         fetch_run.return_value = AgentRunSnapshot("FINISHED", "Done.", "cursor/mail-pin", None, "run-1")
         lookup.return_value = SimpleNamespace(id=uuid.uuid4())
         row = SimpleNamespace(
@@ -73,7 +81,11 @@ class AgentFollowUpTests(unittest.TestCase):
         self.assertIn("git merge --abort", content)
         self.assertIn("git merge --ff-only github/cursor/mail-pin", content)
         self.assertIn("pull/99", content)
+        self.assertIn("Review analytics", content)
+        self.assertIn("Commit: 9f3c2a1b7d8e", content)
+        self.assertIn("comment 2147483999", content)
         open_pull_request.assert_called_once()
+        bugbot_section.assert_called_once()
 
     @patch("app.services.cursor_agent_watch.grok_store.append_message")
     @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")
@@ -95,6 +107,64 @@ class AgentFollowUpTests(unittest.TestCase):
         poll_one(MagicMock(), row)
         self.assertEqual(row.status, "posted")
         self.assertIn("still going", append_message.call_args.kwargs["content"])
+
+    @patch("app.services.cursor_agent_tool.bugbot_section", return_value=("", False))
+    @patch("app.services.github_tool.open_pull_request", return_value="https://github.com/sb11b/Storykeep-/pull/99")
+    @patch("app.services.cursor_agent_watch.grok_store.append_message")
+    @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")
+    @patch("app.services.cursor_agent_watch.cursor_agent_tool.fetch_run")
+    def test_finished_agent_waits_for_bugbot(self, fetch_run, lookup, append_message, open_pull_request, _bugbot):
+        fetch_run.return_value = AgentRunSnapshot("FINISHED", "Done.", "cursor/mail-pin", None, "run-1")
+        lookup.return_value = SimpleNamespace(id=uuid.uuid4())
+        row = SimpleNamespace(
+            user_id=uuid.uuid4(),
+            conversation_id=uuid.uuid4(),
+            agent_id="bc-1",
+            run_id=None,
+            agent_url="",
+            starting_branch="main",
+            status="pending",
+            created_at=datetime.now(timezone.utc),
+            updated_at=None,
+        )
+        poll_one(MagicMock(), row)
+        self.assertEqual(row.status, "bugbot")
+        self.assertIn("Finished.", append_message.call_args.kwargs["content"])
+        self.assertNotIn("Review analytics", append_message.call_args.kwargs["content"])
+        open_pull_request.assert_called_once()
+
+    @patch(
+        "app.services.cursor_agent_tool.bugbot_section",
+        return_value=("Review analytics\n\nPosted review\nCommit: abcdef123456\nFindings: 1\nCost: not billed", True),
+    )
+    @patch("app.services.cursor_agent_watch.grok_store.append_message")
+    @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")
+    @patch("app.services.cursor_agent_watch.cursor_agent_tool.fetch_run")
+    def test_bugbot_watch_posts_the_review(self, fetch_run, lookup, append_message, bugbot_section):
+        fetch_run.return_value = AgentRunSnapshot(
+            "FINISHED",
+            "Done.",
+            "cursor/mail-pin",
+            "https://github.com/sb11b/Storykeep-/pull/12",
+            "run-1",
+        )
+        lookup.return_value = SimpleNamespace(id=uuid.uuid4())
+        row = SimpleNamespace(
+            user_id=uuid.uuid4(),
+            conversation_id=uuid.uuid4(),
+            agent_id="bc-1",
+            run_id="run-1",
+            agent_url="",
+            starting_branch="main",
+            status="bugbot",
+            created_at=datetime.now(timezone.utc),
+            updated_at=None,
+        )
+        poll_one(MagicMock(), row)
+        self.assertEqual(row.status, "posted")
+        self.assertIn("Review analytics", append_message.call_args.kwargs["content"])
+        self.assertIn("abcdef123456", append_message.call_args.kwargs["content"])
+        bugbot_section.assert_called_once()
 
 
 class CursorMemoryFixTests(unittest.TestCase):
