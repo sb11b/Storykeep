@@ -775,6 +775,46 @@ def get_session(
     return JuniorSessionOut.model_validate(store.session_owned(db, user, session_id))
 
 
+@router.get("/threads/{thread_id}/sessions", response_model=list[JuniorSessionOut])
+def list_thread_sessions(
+    thread_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorSessionOut]:
+    """Sessions on this thread (venue matches the thread). 404 if the thread is missing."""
+    rows, next_cursor = store.list_thread_sessions_page(
+        db, user, thread_id, limit=limit, cursor=cursor, before_id=before_id
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSessionOut.model_validate(row) for row in rows]
+
+
+@router.post("/threads/{thread_id}/sessions", response_model=JuniorSessionOut)
+def heartbeat_thread_session(
+    thread_id: UUID,
+    payload: JuniorSessionIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSessionOut:
+    """Heartbeat a session on this thread. Replay stays on this route, not POST /sessions."""
+    incoming = payload or JuniorSessionIn()
+    fields = incoming.model_fields_set
+    row = store.touch_thread_session(
+        db,
+        user,
+        thread_id,
+        venue=incoming.venue if "venue" in fields else None,
+        device_label=incoming.device_label if "device_label" in fields else None,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSessionOut.model_validate(row)
+
+
 @router.get("/threads/{thread_id}/sessions/{session_id}", response_model=JuniorSessionOut)
 def get_thread_session(
     thread_id: UUID,

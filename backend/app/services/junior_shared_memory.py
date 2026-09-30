@@ -634,6 +634,42 @@ def list_sessions_page(
     return page, next_cursor
 
 
+def list_thread_sessions_page(
+    db: Session,
+    user: User,
+    thread_id: UUID,
+    *,
+    limit: int | None = PAGE_DEFAULT,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorSession], str | None]:
+    """Sessions whose venue matches this thread. 404 if the thread is missing."""
+    thread = thread_owned(db, user, thread_id)
+    return list_sessions_page(
+        db,
+        user,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+        venue=thread.venue_last,
+    )
+
+
+def touch_thread_session(
+    db: Session,
+    user: User,
+    thread_id: UUID,
+    *,
+    venue: str | None = None,
+    device_label: str | None = None,
+) -> JuniorSession:
+    """Heartbeat a session on this thread. Venue must match the thread's last venue."""
+    thread = thread_owned(db, user, thread_id)
+    if venue is not None and normalize_venue(venue) != thread.venue_last:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return touch_session(db, user, thread.venue_last, device_label)
+
+
 def recent_thread_context(db: Session, thread: JuniorThread) -> list[JuniorThreadMessage]:
     stmt = (
         select(JuniorThreadMessage)

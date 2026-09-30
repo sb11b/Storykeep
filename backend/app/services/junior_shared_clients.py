@@ -42,6 +42,7 @@ Failed project-thread-message creates replay on POST /projects/{slug}/threads/{i
 Failed project-thread continues replay on POST /projects/{slug}/threads/{id}/continue. GET /projects/{slug}/threads/{id}/continue loads continue history for that thread.
 Failed project-thread search-hit updates replay on POST /projects/{slug}/threads/{id}/search/{id}. GET /projects/{slug}/threads/{id}/search/{id} loads one search hit on that thread.
 Failed thread-session updates replay on POST /threads/{id}/sessions/{id}. GET /threads/{id}/sessions/{id} loads one session on that thread.
+Failed thread-session heartbeats replay on POST /threads/{id}/sessions. GET /threads/{id}/sessions pages sessions on that thread.
 """
 
 from __future__ import annotations
@@ -66,7 +67,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-thread-session-get-v1"
+HEALTH_STAMP = "junior-client-thread-sessions-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -203,6 +204,18 @@ def _is_memory_update_path(path: str) -> bool:
     if "/threads/" in cleaned or "/projects/" in cleaned:
         return False
     return "/memories/" in cleaned
+
+
+def _is_thread_session_create_path(path: str) -> bool:
+    """True only for /threads/{thread_id}/sessions.
+
+    A project-thread path is not this route. POST /sessions is not this route.
+    POST /threads/{id}/sessions/{id} is not this route.
+    """
+    cleaned = (path or "").rstrip("/")
+    if "/projects/" in cleaned or "/sessions/" in cleaned:
+        return False
+    return "/threads/" in cleaned and cleaned.endswith("/sessions")
 
 
 def _is_thread_session_update_path(path: str) -> bool:
@@ -654,6 +667,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if _is_thread_session_update_path(path):
             return "thread_session_update"
+        if _is_thread_session_create_path(path):
+            return "thread_session"
         if _is_project_thread_context_update_path(path):
             return "project_thread_context_update"
         if _is_project_thread_search_update_path(path):
@@ -1062,6 +1077,12 @@ class SharedMemoryClient:
                     venue=post.get("session_venue"),
                     device_label=post.get("session_device_label"),
                 )
+        if kind == "thread_session" and thread_id:
+            return self.touch_thread_session(
+                thread_id,
+                venue=post.get("session_venue"),
+                device_label=post.get("session_device_label") or post.get("device_label"),
+            )
         if kind == "session":
             return self.touch_session(device_label=post.get("device_label"))
         if kind == "session_update":
@@ -1113,6 +1134,8 @@ class SharedMemoryClient:
             return
         if _is_thread_session_update_path(path):
             kind = "thread_session_update"
+        elif _is_thread_session_create_path(path):
+            kind = "thread_session"
         elif _is_project_thread_context_update_path(path):
             kind = "project_thread_context_update"
         elif _is_project_thread_search_update_path(path):
@@ -1278,9 +1301,11 @@ class SharedMemoryClient:
             "kind": kind,
             "venue": self.venue,
             "device_label": body.get("device_label") or self.device_label,
-            "session_venue": body.get("venue") if kind == "thread_session_update" else None,
+            "session_venue": body.get("venue")
+            if kind in {"thread_session_update", "thread_session"}
+            else None,
             "session_device_label": body.get("device_label")
-            if kind == "thread_session_update"
+            if kind in {"thread_session_update", "thread_session"}
             else None,
             "action": exc.action,
             "user_message": exc.user_message,
@@ -2513,6 +2538,44 @@ class SharedMemoryClient:
             action="record this session",
             body=body,
             json=body,
+        )
+
+    def get_thread_sessions(
+        self,
+        thread_id: UUID | str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/threads/{thread_id}/sessions",
+            action="load these thread sessions",
+            **({"params": params} if params else {}),
+        )
+
+    def touch_thread_session(
+        self,
+        thread_id: UUID | str,
+        *,
+        venue: str | None = None,
+        device_label: str | None = None,
+    ) -> Any:
+        chosen_venue = self.venue if venue is None else venue
+        label = self.device_label if device_label is None else device_label
+        body: dict[str, Any] = {
+            "thread_id": str(thread_id),
+            "venue": chosen_venue,
+            "device_label": label,
+        }
+        json_body: dict[str, Any] = {"venue": chosen_venue, "device_label": label}
+        return self._write(
+            "post",
+            f"{API_PREFIX}/threads/{thread_id}/sessions",
+            action="record this thread session",
+            body=body,
+            json=json_body,
         )
 
     def get_thread_session(self, thread_id: UUID | str, session_id: UUID | str) -> Any:

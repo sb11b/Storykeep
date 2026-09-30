@@ -110,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_matches_build(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-thread-session-get-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-thread-sessions-page-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -138,6 +138,7 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertTrue(
             any(path.endswith("/threads/{thread_id}/sessions/{session_id}") for path in junior)
         )
+        self.assertTrue(any(path.endswith("/threads/{thread_id}/sessions") for path in junior))
         self.assertTrue(any(path.endswith("/messages/{message_id}") for path in junior))
         self.assertTrue(any(path.endswith("/search/{message_id}") for path in junior))
         self.assertTrue(any(path.endswith("/agent-context/{slug}") for path in junior))
@@ -428,6 +429,11 @@ class SharedClientSmokeTests(unittest.TestCase):
             "did not load these project thread search hits",
             project_thread_search_page.exception.user_message,
         )
+
+        with self.assertRaises(SharedMemoryError) as thread_sessions:
+            _phone(client).get_thread_sessions(uuid.uuid4())
+        self.assertEqual(thread_sessions.exception.status_code, 401)
+        self.assertIn("did not load these thread sessions", thread_sessions.exception.user_message)
 
         with self.assertRaises(SharedMemoryError) as project_thread_context:
             _windows(client).get_project_thread_agent_context("storykeep", uuid.uuid4())
@@ -1346,6 +1352,46 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertEqual(replay_http.json_bodies[0]["device_label"], "junior-mobile-2")
         self.assertNotIn("venue", replay_http.json_bodies[0])
         self.assertNotIn(("POST", f"/api/v1/junior/sessions/{session_id}"), replay_http.calls)
+        self.assertFalse(path.exists())
+
+    def test_thread_sessions_page_403_and_heartbeat_replays(self):
+        thread_id = uuid.uuid4()
+        http = _ScriptedHttp([200, 403, 403, 403])
+        page = _phone(http).get_thread_sessions(thread_id, limit=2, cursor="abc")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(http.calls[0], ("GET", f"/api/v1/junior/threads/{thread_id}/sessions"))
+        self.assertEqual(http.params[0], {"limit": 2, "cursor": "abc"})
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_thread_sessions(thread_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load these thread sessions", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as saved:
+                phone_client(fail, queue_path=path).touch_thread_session(
+                    thread_id, device_label="junior-mobile-2"
+                )
+        self.assertIn("did not record this thread session", saved.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "thread_session")
+        self.assertEqual(restarted.last_failed_post["device_label"], "junior-mobile-2")
+        self.assertEqual(restarted.last_failed_post["thread_id"], str(thread_id))
+        self.assertEqual(restarted.last_failed_post["session_venue"], "phone")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/threads/{thread_id}/sessions")],
+        )
+        self.assertEqual(replay_http.json_bodies[0]["device_label"], "junior-mobile-2")
+        self.assertEqual(replay_http.json_bodies[0]["venue"], "phone")
+        self.assertNotIn(("POST", "/api/v1/junior/sessions"), replay_http.calls)
+        self.assertFalse(any("/sessions/" in call[1] for call in replay_http.calls))
         self.assertFalse(path.exists())
 
     def test_session_update_queues_and_replays(self):
