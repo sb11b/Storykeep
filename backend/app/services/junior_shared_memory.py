@@ -288,6 +288,40 @@ def update_thread_session(
     )
 
 
+def project_thread_session_owned(
+    db: Session, user: User, slug: str, thread_id: UUID, session_id: UUID
+) -> JuniorSession:
+    """One owner session on a project thread whose venue matches that thread.
+
+    404 when the project is missing, the thread is not on the project, or the
+    session venue is not the thread's last venue.
+    """
+    project_thread_owned(db, user, slug, thread_id)
+    return thread_session_owned(db, user, thread_id, session_id)
+
+
+def update_project_thread_session(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    session_id: UUID,
+    *,
+    venue: str | None = None,
+    device_label: str | None = None,
+    set_device_label: bool = False,
+) -> JuniorSession:
+    project_thread_session_owned(db, user, slug, thread_id, session_id)
+    return update_session(
+        db,
+        user,
+        session_id,
+        venue=venue,
+        device_label=device_label,
+        set_device_label=set_device_label,
+    )
+
+
 def update_thread(
     db: Session,
     user: User,
