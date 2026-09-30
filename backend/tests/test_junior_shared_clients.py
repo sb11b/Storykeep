@@ -110,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_matches_build(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-project-memories-page-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-project-message-get-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -153,6 +153,7 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertTrue(any(path.endswith("/projects/{slug}/agent-context") for path in junior))
         self.assertTrue(any(path.endswith("/projects/{slug}/memories/{memory_id}") for path in junior))
         self.assertTrue(any(path.endswith("/projects/{slug}/memories") for path in junior))
+        self.assertTrue(any(path.endswith("/projects/{slug}/messages/{message_id}") for path in junior))
 
     def test_phone_and_windows_require_login(self):
         client = TestClient(_app())
@@ -308,6 +309,11 @@ class SharedClientSmokeTests(unittest.TestCase):
             _windows(client).get_project_memory("storykeep", uuid.uuid4())
         self.assertEqual(project_memory.exception.status_code, 401)
         self.assertIn("did not load this project memory", project_memory.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_message:
+            _phone(client).get_project_message("storykeep", uuid.uuid4())
+        self.assertEqual(project_message.exception.status_code, 401)
+        self.assertIn("did not load this project message", project_message.exception.user_message)
 
     def test_demo_is_forbidden_for_both_clients(self):
         demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
@@ -556,6 +562,16 @@ class SharedClientSmokeTests(unittest.TestCase):
             _phone(client).update_project_memory("storykeep", uuid.uuid4(), "pinned fact")
         self.assertEqual(project_memory_updated.exception.status_code, 403)
         self.assertIn("did not update this project memory", project_memory_updated.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_message:
+            _windows(client).get_project_message("storykeep", uuid.uuid4())
+        self.assertEqual(project_message.exception.status_code, 403)
+        self.assertIn("did not load this project message", project_message.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_message_updated:
+            _phone(client).update_project_message("storykeep", uuid.uuid4(), "revised turn")
+        self.assertEqual(project_message_updated.exception.status_code, 403)
+        self.assertIn("did not update this project message", project_message_updated.exception.user_message)
 
     def test_phone_posts_on_the_shared_messages_route(self):
         thread, user_msg = _turn("phone")
@@ -1850,6 +1866,53 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertEqual(replay_http.json_bodies[0]["kind"], "note")
         self.assertEqual(replay_http.json_bodies[0]["source_thread"], str(source_thread))
         self.assertNotIn(("POST", f"/api/v1/junior/memories/{memory_id}"), replay_http.calls)
+        self.assertFalse(any("/threads/" in call[1] for call in replay_http.calls))
+        self.assertFalse(path.exists())
+
+    def test_project_message_get_403_and_update_replays(self):
+        message_id = uuid.uuid4()
+        http = _ScriptedHttp([403, 403, 403])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_project_message("storykeep", message_id)
+        self.assertEqual(
+            http.calls[0],
+            ("GET", f"/api/v1/junior/projects/storykeep/messages/{message_id}"),
+        )
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load this project message", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as updated:
+                phone_client(fail, queue_path=path).update_project_message(
+                    "storykeep",
+                    message_id,
+                    "revised turn",
+                    venue="phone",
+                    meta={"source": "phone"},
+                )
+        self.assertIn("did not update this project message", updated.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_message_update")
+        self.assertEqual(restarted.last_failed_post["content"], "revised turn")
+        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
+        self.assertEqual(restarted.last_failed_post["message_id"], str(message_id))
+        self.assertEqual(restarted.last_failed_post["message_venue"], "phone")
+        self.assertEqual(restarted.last_failed_post["meta"], {"source": "phone"})
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/projects/storykeep/messages/{message_id}")],
+        )
+        self.assertEqual(replay_http.json_bodies[0]["text"], "revised turn")
+        self.assertEqual(replay_http.json_bodies[0]["venue"], "phone")
+        self.assertEqual(replay_http.json_bodies[0]["meta"], {"source": "phone"})
+        self.assertNotIn(("POST", f"/api/v1/junior/messages/{message_id}"), replay_http.calls)
         self.assertFalse(any("/threads/" in call[1] for call in replay_http.calls))
         self.assertFalse(path.exists())
 

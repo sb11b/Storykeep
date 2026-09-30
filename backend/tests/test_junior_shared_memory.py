@@ -213,6 +213,17 @@ class JuniorSharedRouteTests(unittest.TestCase):
             401,
         )
         self.assertEqual(
+            client.get(f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}").status_code,
+            401,
+        )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}",
+                json={"text": "revised turn", "venue": "phone"},
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
             client.post(
                 "/api/v1/junior/projects/storykeep/agent-context",
                 json={"q": "finance"},
@@ -307,6 +318,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", "/api/v1/junior/projects/storykeep/agent-context"),
             ("GET", "/api/v1/junior/projects/storykeep/memories"),
             ("POST", "/api/v1/junior/projects/storykeep/memories"),
+            ("GET", f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}"),
         ):
             response = client.request(
                 method,
@@ -796,6 +809,88 @@ class JuniorSharedServiceTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as caught:
                 store.create_project_memory(object(), owner, "storykeep", kind="note", content="keep")
         self.assertEqual(caught.exception.status_code, 404)
+
+    def test_project_message_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        message = SimpleNamespace(
+            id=uuid.uuid4(),
+            thread_id=thread_id,
+            role="user",
+            content="Remember the trailer quote",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        app = _app()
+        with patch("app.routers.junior_shared.store.project_message_owned", return_value=message) as loaded:
+            one = TestClient(app).get(f"/api/v1/junior/projects/storykeep/messages/{message.id}")
+        self.assertEqual(one.status_code, 200)
+        self.assertEqual(one.json()["content"], "Remember the trailer quote")
+        self.assertEqual(loaded.call_args.args[2], "storykeep")
+        self.assertEqual(loaded.call_args.args[3], message.id)
+
+        revised = SimpleNamespace(
+            id=message.id,
+            thread_id=thread_id,
+            role="user",
+            content="revised turn",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        with patch("app.routers.junior_shared.store.update_project_message", return_value=revised) as updated:
+            posted = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/messages/{message.id}",
+                json={"text": "revised turn", "venue": "phone", "meta": {"source": "phone"}},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["content"], "revised turn")
+        self.assertEqual(updated.call_args.args[2], "storykeep")
+        self.assertEqual(updated.call_args.args[3], message.id)
+        self.assertEqual(updated.call_args.kwargs["content"], "revised turn")
+        self.assertTrue(updated.call_args.kwargs["set_venue"])
+        self.assertEqual(updated.call_args.kwargs["venue"], "phone")
+        self.assertTrue(updated.call_args.kwargs["set_meta"])
+
+    def test_project_message_owned_is_404_when_not_on_project(self):
+        owner = _owner()
+        message_id = uuid.uuid4()
+        other_thread = uuid.uuid4()
+        row = SimpleNamespace(id=message_id, thread_id=other_thread, content="hi")
+        project = SimpleNamespace(slug="storykeep", meta={})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[uuid.uuid4()],
+        ), patch("app.services.junior_shared_memory.message_owned", return_value=row):
+            with self.assertRaises(HTTPException) as caught:
+                store.project_message_owned(object(), owner, "storykeep", message_id)
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_update_project_message_uses_project_scope(self):
+        owner = _owner()
+        message_id = uuid.uuid4()
+        thread_id = uuid.uuid4()
+        row = SimpleNamespace(id=message_id, thread_id=thread_id, content="keep")
+        with patch("app.services.junior_shared_memory.project_message_owned", return_value=row), patch(
+            "app.services.junior_shared_memory.update_message",
+            return_value=row,
+        ) as updated:
+            store.update_project_message(
+                object(),
+                owner,
+                "storykeep",
+                message_id,
+                content="revised turn",
+                venue="phone",
+                meta={"source": "phone"},
+                set_venue=True,
+                set_meta=True,
+            )
+        self.assertEqual(updated.call_args.args[2], message_id)
+        self.assertEqual(updated.call_args.kwargs["content"], "revised turn")
+        self.assertTrue(updated.call_args.kwargs["set_venue"])
+        self.assertTrue(updated.call_args.kwargs["set_meta"])
 
     def test_project_memory_owned_is_404_when_not_on_project(self):
         owner = _owner()

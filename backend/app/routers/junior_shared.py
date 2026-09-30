@@ -1130,6 +1130,44 @@ def update_project_memory(
     return JuniorSharedMemoryOut.model_validate(row)
 
 
+@router.get("/projects/{slug}/messages/{message_id}", response_model=JuniorSharedMessageOut)
+def get_project_message(
+    slug: str,
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    return JuniorSharedMessageOut.model_validate(
+        store.project_message_owned(db, user, slug, message_id)
+    )
+
+
+@router.post("/projects/{slug}/messages/{message_id}", response_model=JuniorSharedMessageOut)
+def update_project_message(
+    slug: str,
+    message_id: UUID,
+    payload: JuniorSharedMessageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    """Update a message on this project. Replay stays on this route, not POST /messages/{id}."""
+    fields = payload.model_fields_set
+    row = store.update_project_message(
+        db,
+        user,
+        slug,
+        message_id,
+        content=payload.body or None,
+        venue=payload.venue if "venue" in fields else None,
+        meta=payload.meta if "meta" in fields else None,
+        set_venue="venue" in fields,
+        set_meta="meta" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedMessageOut.model_validate(row)
+
+
 @router.post("/projects/{slug}", response_model=JuniorProjectOut)
 def update_project(
     slug: str,

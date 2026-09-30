@@ -938,6 +938,40 @@ def update_project_memory(
     )
 
 
+def project_message_owned(db: Session, user: User, slug: str, message_id: UUID) -> JuniorThreadMessage:
+    project = get_project(db, user, slug)
+    row = message_owned(db, user, message_id)
+    thread_ids = set(project_search_thread_ids(db, user, project))
+    if row.thread_id not in thread_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    return row
+
+
+def update_project_message(
+    db: Session,
+    user: User,
+    slug: str,
+    message_id: UUID,
+    *,
+    content: str | None = None,
+    venue: str | None = None,
+    meta: dict[str, Any] | None = None,
+    set_venue: bool = False,
+    set_meta: bool = False,
+) -> JuniorThreadMessage:
+    project_message_owned(db, user, slug, message_id)
+    return update_message(
+        db,
+        user,
+        message_id,
+        content=content,
+        venue=venue,
+        meta=meta,
+        set_venue=set_venue,
+        set_meta=set_meta,
+    )
+
+
 def update_project_search_hit(
     db: Session,
     user: User,
