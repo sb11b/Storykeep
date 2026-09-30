@@ -480,20 +480,28 @@ def list_recent_messages_page(
     cursor: UUID | str | None = None,
     before_id: UUID | str | None = None,
     thread_id: UUID | None = None,
+    thread_ids: list[UUID] | None = None,
 ) -> tuple[list[JuniorThreadMessage], str | None]:
     if thread_id is not None:
         return list_messages_page(
             db, user, thread_id, limit=limit, cursor=cursor, before_id=before_id
         )
+    if thread_ids is not None and not thread_ids:
+        return [], None
     cap = clamp_page_limit(limit)
     stmt = (
         select(JuniorThreadMessage)
         .join(JuniorThread, JuniorThreadMessage.thread_id == JuniorThread.id)
         .where(JuniorThread.user_id == user.id)
     )
+    if thread_ids is not None:
+        stmt = stmt.where(JuniorThreadMessage.thread_id.in_(thread_ids))
     marker = _as_uuid(before_id) or _as_uuid(cursor)
     if marker is not None:
-        ref = db.scalar(select(JuniorThreadMessage).where(JuniorThreadMessage.id == marker))
+        ref_stmt = select(JuniorThreadMessage).where(JuniorThreadMessage.id == marker)
+        if thread_ids is not None:
+            ref_stmt = ref_stmt.where(JuniorThreadMessage.thread_id.in_(thread_ids))
+        ref = db.scalar(ref_stmt)
         if ref is not None:
             stmt = stmt.where(
                 or_(
@@ -945,6 +953,52 @@ def project_message_owned(db: Session, user: User, slug: str, message_id: UUID) 
     if row.thread_id not in thread_ids:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
     return row
+
+
+def list_project_messages_page(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    limit: int | None = PAGE_DEFAULT,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorThreadMessage], str | None]:
+    project = get_project(db, user, slug)
+    thread_ids = project_search_thread_ids(db, user, project)
+    return list_recent_messages_page(
+        db,
+        user,
+        limit=limit if limit is not None else PAGE_DEFAULT,
+        cursor=cursor,
+        before_id=before_id,
+        thread_ids=thread_ids,
+    )
+
+
+def create_project_message(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    content: str,
+    venue: str | None,
+    meta: dict[str, Any] | None,
+    device_label: str | None = None,
+) -> tuple[JuniorThread, JuniorThreadMessage, JuniorThreadMessage | None, str]:
+    project = get_project(db, user, slug)
+    thread_ids = project_search_thread_ids(db, user, project)
+    if not thread_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return post_turn(
+        db,
+        user,
+        thread_id=thread_ids[0],
+        content=content,
+        venue=venue,
+        meta=meta,
+        device_label=device_label,
+    )
 
 
 def update_project_message(

@@ -320,6 +320,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", "/api/v1/junior/projects/storykeep/memories"),
             ("GET", f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}"),
+            ("GET", "/api/v1/junior/projects/storykeep/messages"),
+            ("POST", "/api/v1/junior/projects/storykeep/messages"),
         ):
             response = client.request(
                 method,
@@ -809,6 +811,106 @@ class JuniorSharedServiceTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as caught:
                 store.create_project_memory(object(), owner, "storykeep", kind="note", content="keep")
         self.assertEqual(caught.exception.status_code, 404)
+
+    def test_list_project_messages_uses_project_threads(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        project = SimpleNamespace(slug="storykeep", meta={})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[thread_id],
+        ), patch(
+            "app.services.junior_shared_memory.list_recent_messages_page",
+            return_value=([], None),
+        ) as listed:
+            rows, cursor = store.list_project_messages_page(object(), owner, "storykeep", limit=2)
+        self.assertEqual(rows, [])
+        self.assertIsNone(cursor)
+        self.assertEqual(listed.call_args.kwargs["thread_ids"], [thread_id])
+        self.assertEqual(listed.call_args.kwargs["limit"], 2)
+
+    def test_create_project_message_uses_pinned_thread(self):
+        owner = _owner()
+        pinned = uuid.uuid4()
+        other = uuid.uuid4()
+        saved = (SimpleNamespace(id=pinned), SimpleNamespace(id=uuid.uuid4()), None, "stub")
+        project = SimpleNamespace(slug="storykeep", meta={"context_thread_id": str(pinned)})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[pinned, other],
+        ), patch("app.services.junior_shared_memory.post_turn", return_value=saved) as posted:
+            row = store.create_project_message(
+                object(),
+                owner,
+                "storykeep",
+                content="Remember the trailer quote",
+                venue="phone",
+                meta={"source": "phone"},
+                device_label="junior-mobile",
+            )
+        self.assertIs(row, saved)
+        self.assertEqual(posted.call_args.kwargs["thread_id"], pinned)
+        self.assertEqual(posted.call_args.kwargs["content"], "Remember the trailer quote")
+        self.assertEqual(posted.call_args.kwargs["venue"], "phone")
+
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[],
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                store.create_project_message(
+                    object(),
+                    owner,
+                    "storykeep",
+                    content="Remember the trailer quote",
+                    venue="phone",
+                    meta={},
+                )
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_project_messages_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        message = SimpleNamespace(
+            id=uuid.uuid4(),
+            thread_id=thread_id,
+            role="user",
+            content="Remember the trailer quote",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.list_project_messages_page",
+            return_value=([message], str(message.id)),
+        ) as listed:
+            page = TestClient(app).get(
+                "/api/v1/junior/projects/storykeep/messages",
+                params={"limit": 1, "cursor": str(message.id), "before_id": str(message.id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["content"], "Remember the trailer quote")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(message.id))
+        self.assertEqual(listed.call_args.args[2], "storykeep")
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+
+        thread = SimpleNamespace(id=thread_id)
+        with patch(
+            "app.routers.junior_shared.store.create_project_message",
+            return_value=(thread, message, None, "stub"),
+        ) as created:
+            saved = TestClient(app).post(
+                "/api/v1/junior/projects/storykeep/messages",
+                json={"text": "Remember the trailer quote", "venue": "phone", "meta": {"source": "phone"}},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["thread_id"], str(thread_id))
+        self.assertEqual(saved.json()["user_message"]["content"], "Remember the trailer quote")
+        self.assertEqual(created.call_args.args[2], "storykeep")
+        self.assertEqual(created.call_args.kwargs["content"], "Remember the trailer quote")
+        self.assertEqual(created.call_args.kwargs["venue"], "phone")
+        self.assertEqual(created.call_args.kwargs["meta"], {"source": "phone"})
 
     def test_project_message_routes(self):
         now = datetime.now(timezone.utc)

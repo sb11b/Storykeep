@@ -35,6 +35,7 @@ Failed project context pins replay on POST /projects/{slug}/agent-context. GET /
 Failed project-memory updates replay on POST /projects/{slug}/memories/{id}. GET /projects/{slug}/memories/{id} loads one memory on that project.
 Failed project-memory creates replay on POST /projects/{slug}/memories. GET /projects/{slug}/memories pages memories on that project.
 Failed project-message updates replay on POST /projects/{slug}/messages/{id}. GET /projects/{slug}/messages/{id} loads one message on that project.
+Failed project-message creates replay on POST /projects/{slug}/messages. GET /projects/{slug}/messages pages messages on that project.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-message-get-v1"
+HEALTH_STAMP = "junior-client-project-messages-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -182,6 +183,11 @@ def _is_session_update_path(path: str) -> bool:
 def _is_project_message_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     return "/projects/" in cleaned and "/messages/" in cleaned
+
+
+def _is_project_message_create_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and cleaned.endswith("/messages")
 
 
 def _is_message_update_path(path: str) -> bool:
@@ -431,7 +437,7 @@ class SharedMemoryClient:
                     return None
                 kind = self._queued_kind(post)
                 text = str(post.get("text") or post.get("content") or post.get("prompt") or "")
-                if kind in {"message", "continue"} and not text.strip():
+                if kind in {"message", "continue", "project_message"} and not text.strip():
                     remaining.pop(0)
                     self.queue.replace(remaining)
                     continue
@@ -475,6 +481,8 @@ class SharedMemoryClient:
             return "project_context_update"
         if _is_project_message_update_path(path):
             return "project_message_update"
+        if _is_project_message_create_path(path):
+            return "project_message"
         if _is_project_memory_update_path(path):
             return "project_memory_update"
         if _is_project_memory_create_path(path):
@@ -625,6 +633,13 @@ class SharedMemoryClient:
                     venue=post.get("message_venue") or post.get("hit_venue"),
                     meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
                 )
+        if kind == "project_message":
+            return self.create_project_message(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                str(post.get("content") or post.get("text") or text),
+                venue=post.get("message_venue"),
+                meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+            )
         if kind == "project_memory_update":
             memory_id = post.get("memory_id") or post.get("id")
             if memory_id:
@@ -779,6 +794,8 @@ class SharedMemoryClient:
             kind = "project_context_update"
         elif _is_project_message_update_path(path):
             kind = "project_message_update"
+        elif _is_project_message_create_path(path):
+            kind = "project_message"
         elif _is_project_memory_update_path(path):
             kind = "project_memory_update"
         elif _is_project_memory_create_path(path):
@@ -847,7 +864,9 @@ class SharedMemoryClient:
                 else None
             ),
             "search_venue": body.get("search_venue") or body.get("hit_venue"),
-            "message_venue": body.get("venue") if kind == "project_message_update" else None,
+            "message_venue": body.get("venue")
+            if kind in {"project_message_update", "project_message"}
+            else None,
             "snippet": body.get("snippet"),
             "slug": body.get("slug"),
             "display_name": body.get("display_name"),
@@ -1326,6 +1345,54 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{slug}/memories/{memory_id}",
             action="update this project memory",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_messages(
+        self,
+        slug: str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/messages",
+            action="load these project messages",
+            **({"params": params} if params else {}),
+        )
+
+    def create_project_message(
+        self,
+        slug: str,
+        content: str,
+        *,
+        venue: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        target_venue = self.venue if venue is None else venue
+        body: dict[str, Any] = {
+            "slug": slug,
+            "project_slug": slug,
+            "content": content,
+            "text": content,
+            "venue": target_venue,
+            "device_label": self.device_label,
+        }
+        json_body: dict[str, Any] = {
+            "text": content,
+            "venue": target_venue,
+            "device_label": self.device_label,
+        }
+        if meta is not None:
+            body["meta"] = meta
+            json_body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/messages",
+            action="save this project message",
             body=body,
             json=json_body,
         )
