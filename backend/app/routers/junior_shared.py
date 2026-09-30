@@ -1341,6 +1341,54 @@ def create_project_thread(
     return JuniorSharedThreadOut.model_validate(row)
 
 
+@router.get(
+    "/projects/{slug}/threads/{thread_id}/messages/{message_id}",
+    response_model=JuniorSharedMessageOut,
+)
+def get_project_thread_message(
+    slug: str,
+    thread_id: UUID,
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    """One message on a thread of this project. 404 if the thread or message is not on it."""
+    return JuniorSharedMessageOut.model_validate(
+        store.project_thread_message_owned(db, user, slug, thread_id, message_id)
+    )
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/messages/{message_id}",
+    response_model=JuniorSharedMessageOut,
+)
+def update_project_thread_message(
+    slug: str,
+    thread_id: UUID,
+    message_id: UUID,
+    payload: JuniorSharedMessageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessageOut:
+    """Update a message on this project thread. Replay stays on this route."""
+    fields = payload.model_fields_set
+    row = store.update_project_thread_message(
+        db,
+        user,
+        slug,
+        thread_id,
+        message_id,
+        content=payload.body or None,
+        venue=payload.venue if "venue" in fields else None,
+        meta=payload.meta if "meta" in fields else None,
+        set_venue="venue" in fields,
+        set_meta="meta" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedMessageOut.model_validate(row)
+
+
 @router.get("/projects/{slug}/threads/{thread_id}", response_model=JuniorSharedThreadOut)
 def get_project_thread(
     slug: str,

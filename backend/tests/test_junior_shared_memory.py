@@ -1100,6 +1100,100 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(posted.call_args.kwargs["thread_id"], thread.id)
         self.assertEqual(posted.call_args.kwargs["content"], "Start here")
 
+    def test_project_thread_message_owned_is_404_off_thread(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        message_id = uuid.uuid4()
+        row = SimpleNamespace(id=message_id, thread_id=uuid.uuid4(), content="hi")
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch("app.services.junior_shared_memory.message_owned", return_value=row):
+            with self.assertRaises(HTTPException) as caught:
+                store.project_thread_message_owned(
+                    object(), owner, "storykeep", thread_id, message_id
+                )
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_update_project_thread_message_uses_thread_scope(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        message_id = uuid.uuid4()
+        row = SimpleNamespace(id=message_id, thread_id=thread_id, content="keep")
+        with patch(
+            "app.services.junior_shared_memory.project_thread_message_owned",
+            return_value=row,
+        ), patch("app.services.junior_shared_memory.update_message", return_value=row) as updated:
+            store.update_project_thread_message(
+                object(),
+                owner,
+                "storykeep",
+                thread_id,
+                message_id,
+                content="revised turn",
+                venue="phone",
+                meta={"source": "phone"},
+                set_venue=True,
+                set_meta=True,
+            )
+        self.assertEqual(updated.call_args.args[2], message_id)
+        self.assertEqual(updated.call_args.kwargs["content"], "revised turn")
+        self.assertTrue(updated.call_args.kwargs["set_venue"])
+        self.assertTrue(updated.call_args.kwargs["set_meta"])
+
+    def test_project_thread_message_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        message = SimpleNamespace(
+            id=uuid.uuid4(),
+            thread_id=thread_id,
+            role="user",
+            content="Remember the trailer quote",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.project_thread_message_owned",
+            return_value=message,
+        ) as loaded:
+            one = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/messages/{message.id}"
+            )
+        self.assertEqual(one.status_code, 200)
+        self.assertEqual(one.json()["content"], "Remember the trailer quote")
+        self.assertEqual(loaded.call_args.args[2], "storykeep")
+        self.assertEqual(loaded.call_args.args[3], thread_id)
+        self.assertEqual(loaded.call_args.args[4], message.id)
+
+        revised = SimpleNamespace(
+            id=message.id,
+            thread_id=thread_id,
+            role="user",
+            content="revised turn",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        with patch(
+            "app.routers.junior_shared.store.update_project_thread_message",
+            return_value=revised,
+        ) as updated:
+            posted = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/messages/{message.id}",
+                json={"text": "revised turn", "venue": "phone", "meta": {"source": "phone"}},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["content"], "revised turn")
+        self.assertEqual(updated.call_args.args[2], "storykeep")
+        self.assertEqual(updated.call_args.args[3], thread_id)
+        self.assertEqual(updated.call_args.args[4], message.id)
+        self.assertEqual(updated.call_args.kwargs["content"], "revised turn")
+        self.assertTrue(updated.call_args.kwargs["set_venue"])
+        self.assertEqual(updated.call_args.kwargs["venue"], "phone")
+        self.assertTrue(updated.call_args.kwargs["set_meta"])
+
     def test_project_thread_routes(self):
         now = datetime.now(timezone.utc)
         thread = SimpleNamespace(

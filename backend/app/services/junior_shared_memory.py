@@ -1060,6 +1060,42 @@ def update_project_thread(
     )
 
 
+def project_thread_message_owned(
+    db: Session, user: User, slug: str, thread_id: UUID, message_id: UUID
+) -> JuniorThreadMessage:
+    project_thread_owned(db, user, slug, thread_id)
+    row = message_owned(db, user, message_id)
+    if row.thread_id != thread_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    return row
+
+
+def update_project_thread_message(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    message_id: UUID,
+    *,
+    content: str | None = None,
+    venue: str | None = None,
+    meta: dict[str, Any] | None = None,
+    set_venue: bool = False,
+    set_meta: bool = False,
+) -> JuniorThreadMessage:
+    project_thread_message_owned(db, user, slug, thread_id, message_id)
+    return update_message(
+        db,
+        user,
+        message_id,
+        content=content,
+        venue=venue,
+        meta=meta,
+        set_venue=set_venue,
+        set_meta=set_meta,
+    )
+
+
 def project_continue_thread(db: Session, user: User, slug: str) -> JuniorThread:
     """Pinned thread for this project: context thread, else the first agent-run thread."""
     project = get_project(db, user, slug)

@@ -62,7 +62,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-threads-page-v1"
+HEALTH_STAMP = "junior-client-project-thread-message-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -201,8 +201,15 @@ def _is_project_continue_path(path: str) -> bool:
     return "/projects/" in cleaned and cleaned.endswith("/continue")
 
 
+def _is_project_thread_message_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and "/threads/" in cleaned and "/messages/" in cleaned
+
+
 def _is_project_thread_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    if "/messages/" in cleaned:
+        return False
     return "/projects/" in cleaned and "/threads/" in cleaned
 
 
@@ -488,6 +495,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if _is_project_continue_path(path):
             return "project_continue"
+        if _is_project_thread_message_update_path(path):
+            return "project_thread_message_update"
         if _is_project_thread_create_path(path):
             return "project_thread"
         if _is_project_thread_update_path(path):
@@ -559,6 +568,17 @@ class SharedMemoryClient:
     def _replay_one(self, post: dict[str, Any], text: str) -> Any:
         kind = self._queued_kind(post)
         thread_id = post.get("thread_id")
+        if kind == "project_thread_message_update" and thread_id:
+            message_id = post.get("message_id") or post.get("id")
+            if message_id:
+                return self.update_project_thread_message(
+                    str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                    thread_id,
+                    message_id,
+                    str(post.get("content") or post.get("text") or text),
+                    venue=post.get("message_venue") or post.get("hit_venue"),
+                    meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+                )
         if kind == "project_thread":
             return self.open_project_thread(
                 str(post.get("slug") or post.get("project_slug") or self.project_slug),
@@ -829,6 +849,8 @@ class SharedMemoryClient:
             return
         if _is_project_continue_path(path):
             kind = "project_continue"
+        elif _is_project_thread_message_update_path(path):
+            kind = "project_thread_message_update"
         elif _is_project_thread_create_path(path):
             kind = "project_thread"
         elif _is_project_thread_update_path(path):
@@ -915,12 +937,19 @@ class SharedMemoryClient:
                     "thread_search_update",
                     "project_search_update",
                     "project_message_update",
+                    "project_thread_message_update",
                 }
                 else None
             ),
             "search_venue": body.get("search_venue") or body.get("hit_venue"),
             "message_venue": body.get("venue")
-            if kind in {"project_message_update", "project_message", "project_continue"}
+            if kind
+            in {
+                "project_message_update",
+                "project_message",
+                "project_continue",
+                "project_thread_message_update",
+            }
             else None,
             "snippet": body.get("snippet"),
             "slug": body.get("slug"),
@@ -1460,6 +1489,48 @@ class SharedMemoryClient:
         return self._read(
             f"{API_PREFIX}/projects/{slug}/threads/{thread_id}",
             action="load this project thread",
+        )
+
+    def get_project_thread_message(
+        self, slug: str, thread_id: UUID | str, message_id: UUID | str
+    ) -> Any:
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/messages/{message_id}",
+            action="load this project thread message",
+        )
+
+    def update_project_thread_message(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        message_id: UUID | str,
+        content: str,
+        *,
+        venue: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "id": str(message_id),
+            "slug": slug,
+            "project_slug": slug,
+            "thread_id": str(thread_id),
+            "message_id": str(message_id),
+            "content": content,
+            "text": content,
+        }
+        json_body: dict[str, Any] = {"text": content}
+        if venue is not None:
+            body["venue"] = venue
+            json_body["venue"] = venue
+        if meta is not None:
+            body["meta"] = meta
+            json_body["meta"] = meta
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/messages/{message_id}",
+            action="update this project thread message",
+            body=body,
+            json=json_body,
         )
 
     def update_project_thread(
