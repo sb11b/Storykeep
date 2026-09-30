@@ -14,6 +14,7 @@ from app.schemas import (
     JuniorAgentLaunchIn,
     JuniorAgentLaunchOut,
     JuniorProjectAgentLaunchIn,
+    JuniorProjectThreadAgentLaunchIn,
     JuniorThreadAgentLaunchIn,
     JuniorAgentRunIn,
     JuniorAgentRunOut,
@@ -1624,6 +1625,63 @@ def update_project_thread_memory(
     db.commit()
     db.refresh(row)
     return JuniorSharedMemoryOut.model_validate(row)
+
+
+@router.get(
+    "/projects/{slug}/threads/{thread_id}/agents",
+    response_model=list[JuniorAgentRunOut],
+)
+def list_project_thread_agents(
+    slug: str,
+    thread_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorAgentRunOut]:
+    """Agent runs on one thread of this project. 404 if the thread is not on the project."""
+    rows, next_cursor = store.list_project_thread_agents_page(
+        db,
+        user,
+        slug,
+        thread_id,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorAgentRunOut.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/agents",
+    response_model=JuniorAgentLaunchOut,
+)
+def launch_project_thread_agent(
+    slug: str,
+    thread_id: UUID,
+    payload: JuniorProjectThreadAgentLaunchIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentLaunchOut:
+    """Record a launch on this project thread. Does not call Cursor. Replay stays on this route."""
+    run, pack = store.create_project_thread_agent(
+        db,
+        user,
+        slug,
+        thread_id,
+        prompt=payload.prompt,
+        query=payload.q,
+    )
+    db.commit()
+    db.refresh(run)
+    return JuniorAgentLaunchOut(
+        run=JuniorAgentRunOut.model_validate(run),
+        context=_context_out(pack),
+        called_cursor_api=False,
+    )
 
 
 @router.get(

@@ -326,6 +326,31 @@ _NEXT_STEP_RE = re.compile(
     re.I,
 )
 
+SEQ_45_TASK = """Sequenced #45 — next after junior-client-project-thread-agent-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, or #44).
+
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #44 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
+
+Already done on main:
+- Phone and Windows clients POST /projects/{slug}/threads/{thread_id}/agents/{run_id}; failed updates replay on that route
+- GET /projects/{slug}/threads/{thread_id}/agents/{run_id} loads one agent run on that thread
+- POST /projects/{slug}/agents and GET /projects/{slug}/agents already exist
+- POST /threads/{id}/agents and GET /threads/{id}/agents already exist
+- require_user; demo 403; no new public routes
+- Health stamp junior-client-project-thread-agent-get-v1
+
+Your job (#45):
+1. Both clients POST /projects/{slug}/threads/{thread_id}/agents to record a launch on that project thread. Failed writes stay on the FIFO and replay on that same route (not POST /projects/{slug}/agents, not POST /threads/{id}/agents, and not POST /projects/{slug}/threads/{thread_id}/agents/{run_id}). Same auth rule. No silent drop.
+2. Add GET /projects/{slug}/threads/{thread_id}/agents to page agent runs on that thread (limit/cursor or before_id). The thread must be on the project. Same require_user rules. 404 if the project is missing or the thread is not on the project. Still no public routes.
+3. Both clients call GET /projects/{slug}/threads/{thread_id}/agents (same auth).
+4. Keep SQL idempotent; no DROP TABLE. No new public routes.
+5. Extend smoke tests for project-thread-agent replay, project-thread-agents GET, and 403. Keep existing tests green.
+6. Health stamp: junior-client-project-thread-agents-page-v1
+7. Commit on a cursor/* branch and push that branch only.
+
+Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
+"""
+
+
 SEQ_44_TASK = """Sequenced #44 — next after junior-client-project-thread-memories-page-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, or #43).
 
 Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #43 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
@@ -1355,7 +1380,7 @@ def _later_sequence_task(number: int, message: str) -> str:
     return (
         f"Sequenced #{number} on GitHub main of sb11b/Storykeep- (StoryKeep). "
         "Steve asked to start this sequence. Do not refuse. Do not ask him to define it. "
-        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, or #44. "
+        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, or #45. "
         "Do not merge steve-bitsko Cursor PR #2. Do not change the owner email. "
         "Do not git-push to main. Do not re-run SQL. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request. "
         "Commit on a cursor/* branch and push that branch only.\n\n"
@@ -1448,14 +1473,16 @@ def next_step_task(message: str) -> str | None:
         return SEQ_43_TASK
     if number == 44:
         return SEQ_44_TASK
-    if number is not None and number > 44:
+    if number == 45:
+        return SEQ_45_TASK
+    if number is not None and number > 45:
         return _later_sequence_task(number, text)
     if number == 2:
         return None
     for match in _NEXT_STEP_RE.finditer(text):
         if _negated_at(text, match.start()):
             continue
-        return _later_sequence_task(45, text)
+        return _later_sequence_task(46, text)
     return None
 
 

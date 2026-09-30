@@ -110,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_matches_build(self):
-        self.assertEqual(HEALTH_STAMP, "junior-client-project-thread-agent-get-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-project-thread-agents-page-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -176,6 +176,15 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertTrue(
             any(
                 path.endswith("/projects/{slug}/threads/{thread_id}/memories/{memory_id}")
+                for path in junior
+            )
+        )
+        self.assertTrue(
+            any(path.endswith("/projects/{slug}/threads/{thread_id}/agents") for path in junior)
+        )
+        self.assertTrue(
+            any(
+                path.endswith("/projects/{slug}/threads/{thread_id}/agents/{run_id}")
                 for path in junior
             )
         )
@@ -389,6 +398,11 @@ class SharedClientSmokeTests(unittest.TestCase):
             _windows(client).get_project_thread_agent("storykeep", uuid.uuid4(), uuid.uuid4())
         self.assertEqual(project_thread_agent.exception.status_code, 401)
         self.assertIn("did not load this project thread agent", project_thread_agent.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_thread_agents:
+            _phone(client).get_project_thread_agents("storykeep", uuid.uuid4())
+        self.assertEqual(project_thread_agents.exception.status_code, 401)
+        self.assertIn("did not load these project thread agents", project_thread_agents.exception.user_message)
 
     def test_demo_is_forbidden_for_both_clients(self):
         demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
@@ -2444,6 +2458,75 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertNotIn(("POST", f"/api/v1/junior/threads/{thread_id}/memories"), replay_http.calls)
         self.assertFalse(any("/memories/" in call[1] for call in replay_http.calls))
         self.assertFalse(path.exists())
+
+    def test_project_thread_agents_page_403_and_create_replays(self):
+        thread_id = uuid.uuid4()
+        http = _ScriptedHttp([200, 403, 403, 403])
+        page = _phone(http).get_project_thread_agents("storykeep", thread_id, limit=2, cursor="abc")
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(
+            http.calls[0],
+            ("GET", f"/api/v1/junior/projects/storykeep/threads/{thread_id}/agents"),
+        )
+        self.assertEqual(http.params[0], {"limit": 2, "cursor": "abc"})
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_project_thread_agents("storykeep", thread_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load these project thread agents", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as created:
+                phone_client(fail, queue_path=path).launch_project_thread_agent(
+                    "Fix the memory API", "storykeep", thread_id, q="memory"
+                )
+        self.assertIn("did not record this project thread agent", created.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_thread_agent")
+        self.assertEqual(restarted.last_failed_post["prompt"], "Fix the memory API")
+        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
+        self.assertEqual(restarted.last_failed_post["thread_id"], str(thread_id))
+        self.assertEqual(restarted.last_failed_post["q"], "memory")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/projects/storykeep/threads/{thread_id}/agents")],
+        )
+        self.assertEqual(replay_http.json_bodies[0]["prompt"], "Fix the memory API")
+        self.assertEqual(replay_http.json_bodies[0]["q"], "memory")
+        self.assertNotIn("thread_id", replay_http.json_bodies[0])
+        self.assertNotIn(("POST", "/api/v1/junior/projects/storykeep/agents"), replay_http.calls)
+        self.assertNotIn(("POST", f"/api/v1/junior/threads/{thread_id}/agents"), replay_http.calls)
+        self.assertFalse(any("/agents/" in call[1] for call in replay_http.calls))
+        self.assertFalse(path.exists())
+
+    def test_project_slug_agents_launch_does_not_replay_as_agent_update(self):
+        thread_id = uuid.uuid4()
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError):
+                phone_client(fail, queue_path=path).launch_project_thread_agent(
+                    "Fix the memory API", "agents", thread_id
+                )
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_thread_agent")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        replayed.replay_after_login("owner-session")
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/projects/agents/threads/{thread_id}/agents")],
+        )
+        self.assertNotIn(
+            ("POST", f"/api/v1/junior/projects/agents/threads/{thread_id}/agents/{thread_id}"),
+            replay_http.calls,
+        )
 
     def test_project_thread_agent_get_403_and_update_replays(self):
         thread_id = uuid.uuid4()

@@ -64,7 +64,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-agent-get-v1"
+HEALTH_STAMP = "junior-client-project-thread-agents-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -267,6 +267,14 @@ def _is_project_thread_agent_update_path(path: str) -> bool:
         return False
     kind, _, run_id = tail.partition("/")
     return kind == "agents" and bool(run_id) and "/" not in run_id
+
+
+def _is_project_thread_agent_create_path(path: str) -> bool:
+    """True only for /projects/{slug}/threads/{thread_id}/agents.
+
+    A slug of agents is the project name, not this collection.
+    """
+    return _project_thread_tail(path) == "agents"
 
 
 def _is_project_thread_update_path(path: str) -> bool:
@@ -579,6 +587,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if _is_project_thread_agent_update_path(path):
             return "project_thread_agent_update"
+        if _is_project_thread_agent_create_path(path):
+            return "project_thread_agent"
         if _is_project_thread_continue_path(path):
             return "project_thread_continue"
         if _is_project_thread_memory_update_path(path):
@@ -760,6 +770,13 @@ class SharedMemoryClient:
                 str(post.get("prompt") or text),
                 thread_id,
                 project_slug=str(post.get("project_slug") or post.get("slug") or self.project_slug),
+                q=post.get("q"),
+            )
+        if kind == "project_thread_agent" and thread_id:
+            return self.launch_project_thread_agent(
+                str(post.get("prompt") or text),
+                slug=str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                thread_id=thread_id,
                 q=post.get("q"),
             )
         if kind == "project_thread_agent_update" and thread_id:
@@ -990,6 +1007,8 @@ class SharedMemoryClient:
             return
         if _is_project_thread_agent_update_path(path):
             kind = "project_thread_agent_update"
+        elif _is_project_thread_agent_create_path(path):
+            kind = "project_thread_agent"
         elif _is_project_thread_continue_path(path):
             kind = "project_thread_continue"
         elif _is_project_thread_memory_update_path(path):
@@ -1979,6 +1998,48 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/memories/{memory_id}",
             action="update this project thread memory",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_thread_agents(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/agents",
+            action="load these project thread agents",
+            **({"params": params} if params else {}),
+        )
+
+    def launch_project_thread_agent(
+        self,
+        prompt: str,
+        slug: str,
+        thread_id: UUID | str,
+        *,
+        q: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "prompt": prompt,
+            "slug": slug,
+            "project_slug": slug,
+            "thread_id": str(thread_id),
+        }
+        json_body: dict[str, Any] = {"prompt": prompt}
+        if q:
+            body["q"] = q
+            json_body["q"] = q
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/agents",
+            action="record this project thread agent",
             body=body,
             json=json_body,
         )

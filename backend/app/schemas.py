@@ -967,6 +967,16 @@ class JuniorThreadAgentLaunchIn(BaseModel):
     q: str | None = Field(default=None, max_length=200)
 
 
+class JuniorProjectThreadAgentLaunchIn(BaseModel):
+    """Launch recorded on POST /projects/{slug}/threads/{thread_id}/agents.
+
+    The slug and thread id are the path, not the body.
+    """
+
+    prompt: str = Field(min_length=1, max_length=32000)
+    q: str | None = Field(default=None, max_length=200)
+
+
 class JuniorAgentRunIn(BaseModel):
     prompt: str | None = Field(default=None, max_length=32000)
     status: str | None = Field(default=None, max_length=40)

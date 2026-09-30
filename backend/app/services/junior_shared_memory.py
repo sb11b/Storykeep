@@ -1876,6 +1876,51 @@ def project_agent_owned(db: Session, user: User, slug: str, run_id: UUID) -> Jun
     return row
 
 
+def list_project_thread_agents_page(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    limit: int | None = PAGE_DEFAULT,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorAgentRun], str | None]:
+    """Page agent runs on this project thread. 404 if the thread is not on the project."""
+    project = get_project(db, user, slug)
+    project_thread_owned(db, user, slug, thread_id)
+    return list_agent_runs_page(
+        db,
+        user,
+        limit=limit if limit is not None else PAGE_DEFAULT,
+        cursor=cursor,
+        before_id=before_id,
+        project_slug=project.slug,
+        thread_id=thread_id,
+    )
+
+
+def create_project_thread_agent(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    prompt: str,
+    query: str | None = None,
+) -> tuple[JuniorAgentRun, dict[str, Any]]:
+    """Record a launch on this project thread. Does not call Cursor. 404 if the thread is not on the project."""
+    project_thread_owned(db, user, slug, thread_id)
+    return record_agent_run(
+        db,
+        user,
+        project_slug=slug,
+        prompt=prompt,
+        thread_id=thread_id,
+        query=query,
+    )
+
+
 def project_thread_agent_owned(
     db: Session, user: User, slug: str, thread_id: UUID, run_id: UUID
 ) -> JuniorAgentRun:

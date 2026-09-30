@@ -1779,6 +1779,55 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertTrue(updated.call_args.kwargs["set_kind"])
         self.assertTrue(updated.call_args.kwargs["set_source_thread"])
 
+    def test_list_project_thread_agents_uses_thread_scope(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        with patch(
+            "app.services.junior_shared_memory.get_project",
+            return_value=SimpleNamespace(slug="storykeep"),
+        ), patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch(
+            "app.services.junior_shared_memory.list_agent_runs_page",
+            return_value=([], None),
+        ) as listed:
+            rows, cursor = store.list_project_thread_agents_page(
+                object(), owner, "storykeep", thread_id, limit=2
+            )
+        self.assertEqual(rows, [])
+        self.assertIsNone(cursor)
+        self.assertEqual(listed.call_args.kwargs["project_slug"], "storykeep")
+        self.assertEqual(listed.call_args.kwargs["thread_id"], thread_id)
+        self.assertEqual(listed.call_args.kwargs["limit"], 2)
+
+    def test_create_project_thread_agent_uses_thread_scope(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        run = SimpleNamespace(id=uuid.uuid4(), thread_id=thread_id, project_slug="storykeep")
+        pack = {"project": SimpleNamespace(slug="storykeep"), "thread": run}
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch(
+            "app.services.junior_shared_memory.record_agent_run",
+            return_value=(run, pack),
+        ) as created:
+            saved, context = store.create_project_thread_agent(
+                object(),
+                owner,
+                "storykeep",
+                thread_id,
+                prompt="Fix the memory API",
+                query="memory",
+            )
+        self.assertIs(saved, run)
+        self.assertIs(context, pack)
+        self.assertEqual(created.call_args.kwargs["project_slug"], "storykeep")
+        self.assertEqual(created.call_args.kwargs["thread_id"], thread_id)
+        self.assertEqual(created.call_args.kwargs["prompt"], "Fix the memory API")
+        self.assertEqual(created.call_args.kwargs["query"], "memory")
+
     def test_project_thread_agent_owned_is_404_off_thread(self):
         owner = _owner()
         thread_id = uuid.uuid4()
@@ -1848,6 +1897,69 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(updated.call_args.kwargs["prompt"], "Keep going")
         self.assertEqual(updated.call_args.kwargs["status_value"], "launched")
         self.assertTrue(updated.call_args.kwargs["set_status"])
+
+    def test_project_thread_agents_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        run = SimpleNamespace(
+            id=uuid.uuid4(),
+            project_slug="storykeep",
+            prompt="Fix the memory API",
+            status="context_ready",
+            cursor_agent_id=None,
+            thread_id=thread_id,
+            created_at=now,
+        )
+        pack = {
+            "project": SimpleNamespace(
+                id=uuid.uuid4(),
+                slug="storykeep",
+                display_name="StoryKeep",
+                kind="app",
+                repo_url=None,
+                default_branch="main",
+                notes=None,
+                meta={},
+                created_at=now,
+                updated_at=now,
+            ),
+            "thread_summary": None,
+            "recent_messages": [],
+            "memories": [],
+            "search_hits": [],
+            "launch_hint": "record only",
+        }
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.list_project_thread_agents_page",
+            return_value=([run], str(run.id)),
+        ) as listed:
+            page = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/agents",
+                params={"limit": 1, "cursor": str(run.id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["prompt"], "Fix the memory API")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(run.id))
+        self.assertEqual(listed.call_args.args[2], "storykeep")
+        self.assertEqual(listed.call_args.args[3], thread_id)
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+
+        with patch(
+            "app.routers.junior_shared.store.create_project_thread_agent",
+            return_value=(run, pack),
+        ) as created:
+            saved = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/agents",
+                json={"prompt": "Fix the memory API", "q": "memory"},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertFalse(saved.json()["called_cursor_api"])
+        self.assertEqual(saved.json()["run"]["status"], "context_ready")
+        self.assertEqual(created.call_args.args[2], "storykeep")
+        self.assertEqual(created.call_args.args[3], thread_id)
+        self.assertEqual(created.call_args.kwargs["prompt"], "Fix the memory API")
+        self.assertEqual(created.call_args.kwargs["query"], "memory")
 
     def test_project_thread_agent_routes(self):
         now = datetime.now(timezone.utc)
