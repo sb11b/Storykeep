@@ -487,6 +487,7 @@ def build_turn_extras(
     unread_mail_md: str | None,
     search_enabled: bool,
     will_search: bool,
+    will_x: bool = False,
     railway_enabled: bool = False,
     railway_tools: bool = False,
     github_enabled: bool = False,
@@ -505,6 +506,7 @@ def build_turn_extras(
     from app.services import mail_tool
     from app.services import railway_tool
     from app.services import web_search as search_tool
+    from app.services import x_search as x_tool
     from app.services.calendar_tool import CALENDAR_OFF_APPEND, CALENDAR_ON_APPEND
 
     cursor_task = is_cursor_task_turn(user_text)
@@ -534,6 +536,8 @@ def build_turn_extras(
         extras.append(mail_tool.MAIL_ON_APPEND)
     if search_enabled and not cursor_task and will_search:
         extras.append(search_tool.SEARCH_ON_APPEND)
+    if search_enabled and not cursor_task and will_x:
+        extras.append(x_tool.X_ON_APPEND)
     if not cursor_task:
         extras.append(JUNIOR_CAPABILITIES_APPEND)
     if is_chat_program_turn(user_text):

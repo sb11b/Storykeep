@@ -54,6 +54,7 @@ from app.services.junior_jobs import (
     wants_news_summary,
 )
 from app.services import web_search as search_tool
+from app.services import x_search as x_tool
 from app.services import railway_tool
 from app.services import github_tool
 from app.services import cursor_agent_tool
@@ -1206,6 +1207,13 @@ def _chat(
     )
     ops_turn = owner_ops and junior_model.is_ops_turn(user_text)
     delegate_turn = owner_ops and junior_model.is_delegate_turn(user_text)
+    will_x = (
+        search_enabled
+        and x_tool.wants_x_lookup(user_text)
+        and not ops_turn
+        and not delegate_turn
+        and not junior_model.is_cursor_task_turn(user_text)
+    )
     railway_tools_on = owner_ops and (
         ops_turn or chat_service.should_attach_chat_tools(user_text)
     )
@@ -1229,6 +1237,7 @@ def _chat(
         unread_mail_md=unread_mail_md,
         search_enabled=search_enabled,
         will_search=will_search,
+        will_x=will_x,
         railway_enabled=railway_enabled,
         railway_tools=railway_tools_on,
         github_enabled=github_enabled,
@@ -1325,6 +1334,11 @@ def _chat(
         has_working_note=bool(working_excerpt),
         reasoning_effort=resolved_reasoning,
     )
+    if will_x:
+        first_byte_timeout = max(
+            first_byte_timeout,
+            x_tool.LOOKUP_TIMEOUT_SEC + chat_service.CHAT_FIRST_BYTE_TIMEOUT_HEAVY_SEC,
+        )
     if will_cursor_start and cursor_enabled:
         # Cursor API create can take ~45s before xAI gets a turn — avoid client first-byte abort.
         first_byte_timeout = max(
@@ -1502,7 +1516,7 @@ def _chat(
             open_meta: dict[str, object] = {
                 "stream_status": (
                     "searching"
-                    if will_search
+                    if will_search or will_x
                     else "starting_agent"
                     if will_cursor_start and cursor_enabled
                     else "deploying"
@@ -1687,6 +1701,21 @@ def _chat(
             if will_voices:
                 voice_list = await asyncio.to_thread(tts_service.list_voices)
                 block = tts_service.format_voices_for_model(voice_list)
+                extra = f"{extra}\n{block}" if extra else block
+            if will_x:
+                yield chat_service.encode_sse({"stream_status": "searching"})
+                await asyncio.sleep(0)
+                x_outcome = await asyncio.to_thread(x_tool.lookup, user_text)
+                if x_outcome.toast:
+                    yield chat_service.encode_sse(
+                        {
+                            "toast": x_outcome.toast,
+                            "toast_kind": "error" if x_outcome.fatal else "message",
+                            "search_status": x_outcome.status_code,
+                        }
+                    )
+                    await asyncio.sleep(0)
+                block = x_tool.format_for_model(x_outcome)
                 extra = f"{extra}\n{block}" if extra else block
             if will_search:
                 search_query = search_tool.search_query_for(user_text, history_for_xai)

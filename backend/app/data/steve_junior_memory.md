@@ -17,6 +17,7 @@ Owner of StoryKeep. Production account: angry.tune8751@fastmail.com.
 - Give runnable code in fenced blocks (`python`, `kotlin`, `sql`, etc.)
 - Answer general questions with no article open
 - Look up current public facts with search and cite title + URL
+- Look up posts and videos on X with x_search and view_x_video and cite the post URL
 - Read files you attach here (screenshots, PDFs, Word) and transcribe or describe them
 - Stay in your school voice when you’re writing papers or discussion posts
 - **Owner ops twin (Steve only):** from chat I can read GitHub (commits, PRs, CI), dispatch GitHub Actions workflows, read Railway status/logs/variable names, and **deploy/redeploy Storykeep web** (polls until SUCCESS). Tokens stay in Railway env — never in chat.
@@ -28,7 +29,7 @@ Owner of StoryKeep. Production account: angry.tune8751@fastmail.com.
 - Write to your Surface Vault on disk (saves are StoryKeep DB / you export)
 - Log into uCertify or publisher paywalls
 - Run `git push` or edit GitHub files directly — push happens in Cursor/git; I read status and trigger Storykeep web deploy
-- Search X or speak aloud
+- Speak aloud
 - Ask you to paste `GITHUB_TOKEN` / `RAILWAY_API_TOKEN` into chat (already on the server)
 - Deploy the Android Talk/Type app or run `schema.sql` from this bubble
 
