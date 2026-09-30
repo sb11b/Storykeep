@@ -1342,6 +1342,63 @@ def create_project_thread(
 
 
 @router.get(
+    "/projects/{slug}/threads/{thread_id}/messages",
+    response_model=list[JuniorSharedMessageOut],
+)
+def list_project_thread_messages(
+    slug: str,
+    thread_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorSharedMessageOut]:
+    """Messages on one thread of this project. 404 if the thread is not on the project."""
+    rows, next_cursor = store.list_project_thread_messages_page(
+        db,
+        user,
+        slug,
+        thread_id,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSharedMessageOut.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/messages",
+    response_model=JuniorSharedMessagePostOut,
+)
+def create_project_thread_message(
+    slug: str,
+    thread_id: UUID,
+    payload: JuniorSharedMessageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMessagePostOut:
+    """Save a message on this project thread. Replay stays on this route."""
+    thread, user_row, junior_row, reply_status = store.create_project_thread_message(
+        db,
+        user,
+        slug,
+        thread_id,
+        content=payload.body,
+        venue=payload.venue,
+        meta=payload.meta,
+        device_label=payload.device_label,
+    )
+    db.commit()
+    db.refresh(user_row)
+    if junior_row is not None:
+        db.refresh(junior_row)
+    return _turn_out(thread.id, user_row, junior_row, reply_status)
+
+
+@router.get(
     "/projects/{slug}/threads/{thread_id}/messages/{message_id}",
     response_model=JuniorSharedMessageOut,
 )

@@ -1060,6 +1060,51 @@ def update_project_thread(
     )
 
 
+def list_project_thread_messages_page(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    limit: int | None = PAGE_DEFAULT,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorThreadMessage], str | None]:
+    project_thread_owned(db, user, slug, thread_id)
+    return list_messages_page(
+        db,
+        user,
+        thread_id,
+        limit=limit if limit is not None else PAGE_DEFAULT,
+        cursor=cursor,
+        before_id=before_id,
+    )
+
+
+def create_project_thread_message(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    content: str,
+    venue: str | None,
+    meta: dict[str, Any] | None,
+    device_label: str | None = None,
+) -> tuple[JuniorThread, JuniorThreadMessage, JuniorThreadMessage | None, str]:
+    """Save a turn on this project thread. 404 if the thread is not on the project."""
+    project_thread_owned(db, user, slug, thread_id)
+    return post_turn(
+        db,
+        user,
+        thread_id=thread_id,
+        content=content,
+        venue=venue,
+        meta=meta,
+        device_label=device_label,
+    )
+
+
 def project_thread_message_owned(
     db: Session, user: User, slug: str, thread_id: UUID, message_id: UUID
 ) -> JuniorThreadMessage:
