@@ -868,6 +868,91 @@ class JuniorSharedServiceTests(unittest.TestCase):
                 )
         self.assertEqual(caught.exception.status_code, 404)
 
+    def test_project_continue_uses_pinned_thread(self):
+        owner = _owner()
+        pinned = uuid.uuid4()
+        other = uuid.uuid4()
+        thread = SimpleNamespace(id=pinned)
+        project = SimpleNamespace(slug="storykeep", meta={"context_thread_id": str(pinned)})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[pinned, other],
+        ), patch("app.services.junior_shared_memory.thread_owned", return_value=thread) as owned:
+            row = store.project_continue_thread(object(), owner, "storykeep")
+        self.assertIs(row, thread)
+        self.assertEqual(owned.call_args.args[2], pinned)
+
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[],
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                store.project_continue_thread(object(), owner, "storykeep")
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_project_continue_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        thread = SimpleNamespace(
+            id=thread_id,
+            title="Storykeep",
+            venue_last="phone",
+            status="open",
+            summary=None,
+            created_at=now,
+            updated_at=now,
+        )
+        message = SimpleNamespace(
+            id=uuid.uuid4(),
+            thread_id=thread_id,
+            role="user",
+            content="pick up the trailer",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.project_continue_thread",
+            return_value=thread,
+        ) as loaded, patch(
+            "app.routers.junior_shared.store.list_messages_page",
+            return_value=([message], str(message.id)),
+        ) as history:
+            page = TestClient(app).get(
+                "/api/v1/junior/projects/storykeep/continue",
+                params={"limit": 1, "cursor": str(message.id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()["thread"]["id"], str(thread_id))
+        self.assertEqual(page.json()["messages"][0]["content"], "pick up the trailer")
+        self.assertIsNone(page.json()["user_message"])
+        self.assertEqual(page.headers.get("x-next-cursor"), str(message.id))
+        self.assertEqual(loaded.call_args.args[2], "storykeep")
+        self.assertEqual(history.call_args.kwargs["limit"], 1)
+
+        with patch(
+            "app.routers.junior_shared.store.project_continue_thread",
+            return_value=thread,
+        ), patch(
+            "app.routers.junior_shared.store.post_turn",
+            return_value=(thread, message, None, "stubbed_no_key"),
+        ) as posted, patch(
+            "app.routers.junior_shared.store.list_messages_page",
+            return_value=([message], None),
+        ):
+            saved = TestClient(app).post(
+                "/api/v1/junior/projects/storykeep/continue",
+                json={"text": "pick up the trailer", "venue": "phone", "meta": {"source": "phone"}},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["thread"]["id"], str(thread_id))
+        self.assertEqual(saved.json()["user_message"]["content"], "pick up the trailer")
+        self.assertEqual(posted.call_args.kwargs["thread_id"], thread_id)
+        self.assertEqual(posted.call_args.kwargs["content"], "pick up the trailer")
+        self.assertEqual(posted.call_args.kwargs["venue"], "phone")
+        self.assertEqual(posted.call_args.kwargs["meta"], {"source": "phone"})
+
     def test_project_messages_routes(self):
         now = datetime.now(timezone.utc)
         thread_id = uuid.uuid4()

@@ -1214,6 +1214,74 @@ def update_project_message(
     return JuniorSharedMessageOut.model_validate(row)
 
 
+@router.get("/projects/{slug}/continue", response_model=JuniorSharedContinueOut)
+def get_project_continue(
+    slug: str,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> JuniorSharedContinueOut:
+    """Continue history for this project's pinned thread. 404 if the project or thread is missing."""
+    thread = store.project_continue_thread(db, user, slug)
+    history, next_cursor = store.list_messages_page(
+        db, user, thread.id, limit=limit, cursor=cursor, before_id=before_id
+    )
+    _page_headers(response, next_cursor)
+    return JuniorSharedContinueOut(
+        thread=JuniorSharedThreadOut.model_validate(thread),
+        messages=[JuniorSharedMessageOut.model_validate(row) for row in history],
+    )
+
+
+@router.post("/projects/{slug}/continue", response_model=JuniorSharedContinueOut)
+def continue_project(
+    slug: str,
+    response: Response,
+    payload: JuniorSharedContinueIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> JuniorSharedContinueOut:
+    """Resume this project's pinned thread. Replay stays on this route, not POST /threads/{id}/continue."""
+    thread = store.project_continue_thread(db, user, slug)
+    user_row = junior_row = None
+    reply_status = None
+    incoming = payload or JuniorSharedContinueIn()
+    body = incoming.body
+    if body:
+        thread, user_row, junior_row, reply_status = store.post_turn(
+            db,
+            user,
+            thread_id=thread.id,
+            content=body,
+            venue=incoming.venue,
+            meta=incoming.meta,
+            device_label=incoming.device_label,
+        )
+        db.commit()
+        db.refresh(thread)
+        db.refresh(user_row)
+        if junior_row is not None:
+            db.refresh(junior_row)
+    history, next_cursor = store.list_messages_page(
+        db, user, thread.id, limit=limit, cursor=cursor, before_id=before_id
+    )
+    _page_headers(response, next_cursor)
+    return JuniorSharedContinueOut(
+        thread=JuniorSharedThreadOut.model_validate(thread),
+        messages=[JuniorSharedMessageOut.model_validate(row) for row in history],
+        user_message=JuniorSharedMessageOut.model_validate(user_row) if user_row else None,
+        junior_message=JuniorSharedMessageOut.model_validate(junior_row) if junior_row else None,
+        reply_status=reply_status,
+        detail=store.REPLY_STUB_DETAIL if user_row is not None and junior_row is None else None,
+    )
+
+
 @router.post("/projects/{slug}", response_model=JuniorProjectOut)
 def update_project(
     slug: str,

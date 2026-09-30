@@ -36,6 +36,7 @@ Failed project-memory updates replay on POST /projects/{slug}/memories/{id}. GET
 Failed project-memory creates replay on POST /projects/{slug}/memories. GET /projects/{slug}/memories pages memories on that project.
 Failed project-message updates replay on POST /projects/{slug}/messages/{id}. GET /projects/{slug}/messages/{id} loads one message on that project.
 Failed project-message creates replay on POST /projects/{slug}/messages. GET /projects/{slug}/messages pages messages on that project.
+Failed project continues replay on POST /projects/{slug}/continue. GET /projects/{slug}/continue loads continue history for that project's pinned thread.
 """
 
 from __future__ import annotations
@@ -60,7 +61,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-bugbot-analytics-v1"
+HEALTH_STAMP = "junior-client-project-continue-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -136,6 +137,8 @@ def _is_project_update_path(path: str) -> bool:
         return False
     if "/messages/" in cleaned or cleaned.endswith("/messages"):
         return False
+    if cleaned.endswith("/continue"):
+        return False
     return "/projects/" in cleaned
 
 
@@ -188,6 +191,11 @@ def _is_project_message_update_path(path: str) -> bool:
 def _is_project_message_create_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     return "/projects/" in cleaned and cleaned.endswith("/messages")
+
+
+def _is_project_continue_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and cleaned.endswith("/continue")
 
 
 def _is_message_update_path(path: str) -> bool:
@@ -437,7 +445,7 @@ class SharedMemoryClient:
                     return None
                 kind = self._queued_kind(post)
                 text = str(post.get("text") or post.get("content") or post.get("prompt") or "")
-                if kind in {"message", "continue", "project_message"} and not text.strip():
+                if kind in {"message", "continue", "project_message", "project_continue"} and not text.strip():
                     remaining.pop(0)
                     self.queue.replace(remaining)
                     continue
@@ -465,6 +473,8 @@ class SharedMemoryClient:
         if kind:
             return kind
         path = str(post.get("path") or "")
+        if _is_project_continue_path(path):
+            return "project_continue"
         if "/continue" in path:
             return "continue"
         if _is_thread_context_update_path(path):
@@ -532,6 +542,13 @@ class SharedMemoryClient:
     def _replay_one(self, post: dict[str, Any], text: str) -> Any:
         kind = self._queued_kind(post)
         thread_id = post.get("thread_id")
+        if kind == "project_continue":
+            return self.continue_project(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                text=text or None,
+                venue=post.get("message_venue") or post.get("venue"),
+                meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
+            )
         if kind == "continue" and thread_id:
             return self.continue_thread(thread_id, text=text)
         if kind == "project":
@@ -778,7 +795,9 @@ class SharedMemoryClient:
         self.last_user_error = exc.user_message
         if self._replaying:
             return
-        if "/continue" in path:
+        if _is_project_continue_path(path):
+            kind = "project_continue"
+        elif "/continue" in path:
             kind = "continue"
         elif _is_thread_context_update_path(path):
             kind = "thread_context_update"
@@ -865,7 +884,7 @@ class SharedMemoryClient:
             ),
             "search_venue": body.get("search_venue") or body.get("hit_venue"),
             "message_venue": body.get("venue")
-            if kind in {"project_message_update", "project_message"}
+            if kind in {"project_message_update", "project_message", "project_continue"}
             else None,
             "snippet": body.get("snippet"),
             "slug": body.get("slug"),
@@ -1347,6 +1366,68 @@ class SharedMemoryClient:
             action="update this project memory",
             body=body,
             json=json_body,
+        )
+
+    def get_project_continue(
+        self,
+        slug: str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/continue",
+            action="load this project continue",
+            **({"params": params} if params else {}),
+        )
+
+    def continue_project(
+        self,
+        slug: str,
+        text: str | None = None,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+        venue: str | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
+        target_venue = self.venue if venue is None else venue
+        body: dict[str, Any] = {
+            "slug": slug,
+            "project_slug": slug,
+            "venue": target_venue,
+            "device_label": self.device_label,
+        }
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        extra = {"params": params} if params else {}
+        if text:
+            body["text"] = text
+            body["content"] = text
+            json_body: dict[str, Any] = {
+                "text": text,
+                "venue": target_venue,
+                "device_label": self.device_label,
+            }
+            if meta is not None:
+                body["meta"] = meta
+                json_body["meta"] = meta
+            return self._write(
+                "post",
+                f"{API_PREFIX}/projects/{slug}/continue",
+                action="save this project continue",
+                body=body,
+                json=json_body,
+                **extra,
+            )
+        return self._request(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/continue",
+            action="load this project continue",
+            json={"venue": target_venue, "device_label": self.device_label},
+            **extra,
         )
 
     def get_project_messages(

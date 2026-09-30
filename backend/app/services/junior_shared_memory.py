@@ -976,6 +976,15 @@ def list_project_messages_page(
     )
 
 
+def project_continue_thread(db: Session, user: User, slug: str) -> JuniorThread:
+    """Pinned thread for this project: context thread, else the first agent-run thread."""
+    project = get_project(db, user, slug)
+    thread_ids = project_search_thread_ids(db, user, project)
+    if not thread_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return thread_owned(db, user, thread_ids[0])
+
+
 def create_project_message(
     db: Session,
     user: User,

@@ -169,6 +169,8 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/projects/{slug}/agents/{id}` | Update that agent run (404 if missing or on another project) |
 | `GET` | `/api/v1/junior/projects/{slug}/search` | Search hits on that project (`q`, `limit`, `cursor` or `before_id`; 404 if the project is missing) |
 | `POST` | `/api/v1/junior/projects/{slug}/search` | Run that same search; replay stays on this route |
+| `GET` | `/api/v1/junior/projects/{slug}/continue` | Continue history for that project's pinned thread (`limit`, `cursor` or `before_id`; 404 if the project or thread is missing) |
+| `POST` | `/api/v1/junior/projects/{slug}/continue` | Resume that pinned thread; replay stays on this route, not `POST /threads/{id}/continue` |
 | `GET` | `/api/v1/junior/agent-context?project=&q=` | Pack for a Cursor agent (project + thread + memories + search) |
 | `GET` | `/api/v1/junior/agent-context/{slug}` | One project context pack (`q` and `thread_id` optional) |
 | `POST` | `/api/v1/junior/agent-context/{slug}` | Pin query/thread on that pack (404 if the project is missing) |
