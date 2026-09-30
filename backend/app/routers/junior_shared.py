@@ -1282,6 +1282,65 @@ def continue_project(
     )
 
 
+@router.get("/projects/{slug}/threads", response_model=list[JuniorSharedThreadOut])
+def list_project_threads(
+    slug: str,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorSharedThreadOut]:
+    rows, next_cursor = store.list_project_threads_page(
+        db,
+        user,
+        slug,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSharedThreadOut.model_validate(row) for row in rows]
+
+
+@router.post("/projects/{slug}/threads")
+def create_project_thread(
+    slug: str,
+    payload: JuniorSharedThreadIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedThreadOut | JuniorSharedMessagePostOut:
+    """Open a thread on this project. Replay stays on this route, not POST /threads."""
+    row = store.create_project_thread(
+        db,
+        user,
+        slug,
+        title=payload.title,
+        venue=payload.venue,
+        status_value=payload.status,
+    )
+    first = (payload.content or payload.text or "").strip()
+    if first:
+        thread, user_row, junior_row, reply_status = store.post_turn(
+            db,
+            user,
+            thread_id=row.id,
+            content=first,
+            venue=payload.venue,
+            meta=payload.meta,
+            device_label=payload.device_label,
+        )
+        db.commit()
+        db.refresh(user_row)
+        if junior_row is not None:
+            db.refresh(junior_row)
+        return _turn_out(thread.id, user_row, junior_row, reply_status)
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedThreadOut.model_validate(row)
+
+
 @router.get("/projects/{slug}/threads/{thread_id}", response_model=JuniorSharedThreadOut)
 def get_project_thread(
     slug: str,

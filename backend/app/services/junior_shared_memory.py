@@ -361,14 +361,20 @@ def list_threads_page(
     limit: int = PAGE_DEFAULT,
     cursor: UUID | str | None = None,
     before_id: UUID | str | None = None,
+    thread_ids: list[UUID] | None = None,
 ) -> tuple[list[JuniorThread], str | None]:
+    if thread_ids is not None and not thread_ids:
+        return [], None
     cap = clamp_page_limit(limit)
     stmt = select(JuniorThread).where(JuniorThread.user_id == user.id)
+    if thread_ids is not None:
+        stmt = stmt.where(JuniorThread.id.in_(thread_ids))
     marker = _as_uuid(before_id) or _as_uuid(cursor)
     if marker is not None:
-        ref = db.scalar(
-            select(JuniorThread).where(JuniorThread.user_id == user.id, JuniorThread.id == marker)
-        )
+        ref_stmt = select(JuniorThread).where(JuniorThread.user_id == user.id, JuniorThread.id == marker)
+        if thread_ids is not None:
+            ref_stmt = ref_stmt.where(JuniorThread.id.in_(thread_ids))
+        ref = db.scalar(ref_stmt)
         if ref is not None:
             stmt = stmt.where(
                 or_(
@@ -976,6 +982,56 @@ def list_project_messages_page(
     )
 
 
+def list_project_threads_page(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    limit: int | None = PAGE_DEFAULT,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorThread], str | None]:
+    project = get_project(db, user, slug)
+    thread_ids = project_search_thread_ids(db, user, project)
+    return list_threads_page(
+        db,
+        user,
+        limit=limit if limit is not None else PAGE_DEFAULT,
+        cursor=cursor,
+        before_id=before_id,
+        thread_ids=thread_ids,
+    )
+
+
+def create_project_thread(
+    db: Session,
+    user: User,
+    slug: str,
+    *,
+    title: str | None,
+    venue: str | None,
+    status_value: str | None = "open",
+) -> JuniorThread:
+    """Open a thread and tie it to this project. The first thread becomes the pin."""
+    project = get_project(db, user, slug)
+    row = create_thread(db, user, title=title, venue=venue, status_value=status_value)
+    meta = dict(project.meta) if isinstance(project.meta, dict) else {}
+    pinned = _as_uuid(meta.get("context_thread_id"))
+    token = str(row.id)
+    if pinned is None:
+        meta["context_thread_id"] = token
+    else:
+        raw = meta.get("project_thread_ids")
+        extra = [str(item) for item in raw if item] if isinstance(raw, list) else []
+        if token not in extra and token != str(pinned):
+            extra.append(token)
+        meta["project_thread_ids"] = extra
+    project.meta = meta
+    project.updated_at = datetime.now(timezone.utc)
+    db.flush()
+    return row
+
+
 def project_thread_owned(db: Session, user: User, slug: str, thread_id: UUID) -> JuniorThread:
     project = get_project(db, user, slug)
     row = thread_owned(db, user, thread_id)
@@ -1346,7 +1402,7 @@ def list_projects_page(
 
 
 def project_search_thread_ids(db: Session, user: User, project: JuniorProject) -> list[UUID]:
-    """Threads tied to this project: pinned context thread, then agent-run threads."""
+    """Threads tied to this project: pinned context thread, agent-run threads, then opened threads."""
     ids: list[UUID] = []
     seen: set[UUID] = set()
     meta = project.meta if isinstance(project.meta, dict) else {}
@@ -1367,6 +1423,16 @@ def project_search_thread_ids(db: Session, user: User, project: JuniorProject) -
         if thread_id is not None and thread_id not in seen:
             seen.add(thread_id)
             ids.append(thread_id)
+    raw_extra = meta.get("project_thread_ids")
+    if isinstance(raw_extra, list):
+        for item in raw_extra:
+            extra_id = _as_uuid(item)
+            if extra_id is None or extra_id in seen:
+                continue
+            thread = db.get(JuniorThread, extra_id)
+            if thread is not None and thread.user_id == user.id:
+                seen.add(extra_id)
+                ids.append(extra_id)
     return ids
 
 

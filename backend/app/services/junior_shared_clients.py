@@ -37,6 +37,7 @@ Failed project-memory creates replay on POST /projects/{slug}/memories. GET /pro
 Failed project-message updates replay on POST /projects/{slug}/messages/{id}. GET /projects/{slug}/messages/{id} loads one message on that project.
 Failed project-message creates replay on POST /projects/{slug}/messages. GET /projects/{slug}/messages pages messages on that project.
 Failed project continues replay on POST /projects/{slug}/continue. GET /projects/{slug}/continue loads continue history for that project's pinned thread.
+Failed project-thread opens replay on POST /projects/{slug}/threads. GET /projects/{slug}/threads pages threads on that project.
 """
 
 from __future__ import annotations
@@ -61,7 +62,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-security-before-push-v1"
+HEALTH_STAMP = "junior-client-project-threads-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -203,6 +204,11 @@ def _is_project_continue_path(path: str) -> bool:
 def _is_project_thread_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     return "/projects/" in cleaned and "/threads/" in cleaned
+
+
+def _is_project_thread_create_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and cleaned.endswith("/threads")
 
 
 def _is_message_update_path(path: str) -> bool:
@@ -482,6 +488,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if _is_project_continue_path(path):
             return "project_continue"
+        if _is_project_thread_create_path(path):
+            return "project_thread"
         if _is_project_thread_update_path(path):
             return "project_thread_update"
         if "/continue" in path:
@@ -551,6 +559,14 @@ class SharedMemoryClient:
     def _replay_one(self, post: dict[str, Any], text: str) -> Any:
         kind = self._queued_kind(post)
         thread_id = post.get("thread_id")
+        if kind == "project_thread":
+            return self.open_project_thread(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                str(post.get("title") or ""),
+                text=text or None,
+                status=post.get("status"),
+                venue=post.get("venue"),
+            )
         if kind == "project_thread_update" and thread_id:
             return self.update_project_thread(
                 str(post.get("slug") or post.get("project_slug") or self.project_slug),
@@ -813,6 +829,8 @@ class SharedMemoryClient:
             return
         if _is_project_continue_path(path):
             kind = "project_continue"
+        elif _is_project_thread_create_path(path):
+            kind = "project_thread"
         elif _is_project_thread_update_path(path):
             kind = "project_thread_update"
         elif "/continue" in path:
@@ -1382,6 +1400,58 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{slug}/memories/{memory_id}",
             action="update this project memory",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_threads(
+        self,
+        slug: str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads",
+            action="load these project threads",
+            **({"params": params} if params else {}),
+        )
+
+    def open_project_thread(
+        self,
+        slug: str,
+        title: str,
+        *,
+        text: str | None = None,
+        status: str | None = None,
+        venue: str | None = None,
+    ) -> Any:
+        target_venue = self.venue if venue is None else venue
+        body: dict[str, Any] = {
+            "title": title,
+            "slug": slug,
+            "project_slug": slug,
+            "venue": target_venue,
+            "device_label": self.device_label,
+        }
+        json_body: dict[str, Any] = {
+            "title": title,
+            "venue": target_venue,
+            "device_label": self.device_label,
+        }
+        if text:
+            body["text"] = text
+            body["content"] = text
+            json_body["text"] = text
+        if status is not None:
+            body["status"] = status
+            json_body["status"] = status
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads",
+            action="open this project thread",
             body=body,
             json=json_body,
         )

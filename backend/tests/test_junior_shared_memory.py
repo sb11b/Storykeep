@@ -212,6 +212,14 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ).status_code,
             401,
         )
+        self.assertEqual(client.get("/api/v1/junior/projects/storykeep/threads").status_code, 401)
+        self.assertEqual(
+            client.post(
+                "/api/v1/junior/projects/storykeep/threads",
+                json={"title": "Lab notes", "text": "Start here"},
+            ).status_code,
+            401,
+        )
         self.assertEqual(
             client.get(f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}").status_code,
             401,
@@ -322,6 +330,10 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", f"/api/v1/junior/projects/storykeep/messages/{uuid.uuid4()}"),
             ("GET", "/api/v1/junior/projects/storykeep/messages"),
             ("POST", "/api/v1/junior/projects/storykeep/messages"),
+            ("GET", "/api/v1/junior/projects/storykeep/threads"),
+            ("POST", "/api/v1/junior/projects/storykeep/threads"),
+            ("GET", f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}"),
+            ("POST", f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}"),
         ):
             response = client.request(
                 method,
@@ -922,6 +934,171 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(updated.call_args.args[2], thread_id)
         self.assertEqual(updated.call_args.kwargs["title"], "Renamed")
         self.assertEqual(updated.call_args.kwargs["status_value"], "archived")
+
+    def test_project_search_thread_ids_include_opened_threads(self):
+        owner = _owner()
+        pinned = uuid.uuid4()
+        opened = uuid.uuid4()
+        foreign = uuid.uuid4()
+        rows = {
+            pinned: SimpleNamespace(id=pinned, user_id=owner.id),
+            opened: SimpleNamespace(id=opened, user_id=owner.id),
+            foreign: SimpleNamespace(id=foreign, user_id=uuid.uuid4()),
+        }
+        project = SimpleNamespace(
+            slug="storykeep",
+            meta={
+                "context_thread_id": str(pinned),
+                "project_thread_ids": [str(opened), str(pinned), str(foreign), "not-a-uuid"],
+            },
+        )
+
+        class _Db:
+            def get(self, _model, key):
+                return rows.get(key)
+
+            def scalars(self, _stmt):
+                return []
+
+        self.assertEqual(
+            store.project_search_thread_ids(_Db(), owner, project),
+            [pinned, opened],
+        )
+
+    def test_list_project_threads_uses_project_threads(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        project = SimpleNamespace(slug="storykeep", meta={})
+        with patch("app.services.junior_shared_memory.get_project", return_value=project), patch(
+            "app.services.junior_shared_memory.project_search_thread_ids",
+            return_value=[thread_id],
+        ), patch(
+            "app.services.junior_shared_memory.list_threads_page",
+            return_value=([], None),
+        ) as listed:
+            rows, cursor = store.list_project_threads_page(object(), owner, "storykeep", limit=2)
+        self.assertEqual(rows, [])
+        self.assertIsNone(cursor)
+        self.assertEqual(listed.call_args.kwargs["thread_ids"], [thread_id])
+        self.assertEqual(listed.call_args.kwargs["limit"], 2)
+
+    def test_create_project_thread_pins_or_appends(self):
+        owner = _owner()
+        created = SimpleNamespace(id=uuid.uuid4())
+        empty = SimpleNamespace(slug="storykeep", meta={}, updated_at=None)
+        with patch("app.services.junior_shared_memory.get_project", return_value=empty), patch(
+            "app.services.junior_shared_memory.create_thread",
+            return_value=created,
+        ):
+            row = store.create_project_thread(
+                SimpleNamespace(flush=lambda: None),
+                owner,
+                "storykeep",
+                title="Lab notes",
+                venue="phone",
+                status_value="open",
+            )
+        self.assertIs(row, created)
+        self.assertEqual(empty.meta["context_thread_id"], str(created.id))
+        self.assertNotIn("project_thread_ids", empty.meta)
+
+        pinned = uuid.uuid4()
+        another = SimpleNamespace(id=uuid.uuid4())
+        existing = SimpleNamespace(
+            slug="storykeep",
+            meta={"context_thread_id": str(pinned), "notes": "keep"},
+            updated_at=None,
+        )
+        with patch("app.services.junior_shared_memory.get_project", return_value=existing), patch(
+            "app.services.junior_shared_memory.create_thread",
+            return_value=another,
+        ):
+            store.create_project_thread(
+                SimpleNamespace(flush=lambda: None),
+                owner,
+                "storykeep",
+                title="Second",
+                venue="windows",
+                status_value="open",
+            )
+        self.assertEqual(existing.meta["context_thread_id"], str(pinned))
+        self.assertEqual(existing.meta["notes"], "keep")
+        self.assertEqual(existing.meta["project_thread_ids"], [str(another.id)])
+
+        with patch(
+            "app.services.junior_shared_memory.get_project",
+            side_effect=HTTPException(status_code=404, detail="Project not found"),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                store.create_project_thread(
+                    object(),
+                    owner,
+                    "missing",
+                    title="Lab notes",
+                    venue="phone",
+                )
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_project_threads_routes(self):
+        now = datetime.now(timezone.utc)
+        thread = SimpleNamespace(
+            id=uuid.uuid4(),
+            title="Lab notes",
+            venue_last="phone",
+            status="open",
+            summary=None,
+            created_at=now,
+            updated_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.list_project_threads_page",
+            return_value=([thread], str(thread.id)),
+        ) as listed:
+            page = TestClient(app).get(
+                "/api/v1/junior/projects/storykeep/threads",
+                params={"limit": 1, "cursor": str(thread.id), "before_id": str(thread.id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["title"], "Lab notes")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(thread.id))
+        self.assertEqual(listed.call_args.args[2], "storykeep")
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+
+        with patch("app.routers.junior_shared.store.create_project_thread", return_value=thread) as created:
+            opened = TestClient(app).post(
+                "/api/v1/junior/projects/storykeep/threads",
+                json={"title": "Lab notes", "venue": "phone", "status": "open"},
+            )
+        self.assertEqual(opened.status_code, 200)
+        self.assertEqual(opened.json()["id"], str(thread.id))
+        self.assertEqual(created.call_args.args[2], "storykeep")
+        self.assertEqual(created.call_args.kwargs["title"], "Lab notes")
+        self.assertEqual(created.call_args.kwargs["venue"], "phone")
+        self.assertEqual(created.call_args.kwargs["status_value"], "open")
+
+        message = SimpleNamespace(
+            id=uuid.uuid4(),
+            thread_id=thread.id,
+            role="user",
+            content="Start here",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        with patch("app.routers.junior_shared.store.create_project_thread", return_value=thread), patch(
+            "app.routers.junior_shared.store.post_turn",
+            return_value=(thread, message, None, "stub"),
+        ) as posted:
+            saved = TestClient(app).post(
+                "/api/v1/junior/projects/storykeep/threads",
+                json={"title": "Lab notes", "text": "Start here", "venue": "phone", "meta": {"source": "phone"}},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["thread_id"], str(thread.id))
+        self.assertEqual(saved.json()["user_message"]["content"], "Start here")
+        self.assertEqual(posted.call_args.kwargs["thread_id"], thread.id)
+        self.assertEqual(posted.call_args.kwargs["content"], "Start here")
 
     def test_project_thread_routes(self):
         now = datetime.now(timezone.utc)
