@@ -2013,6 +2013,44 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(changed.call_args.kwargs["status_value"], "launched")
         self.assertTrue(changed.call_args.kwargs["set_status"])
 
+    def test_search_project_thread_requires_project_thread(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            side_effect=HTTPException(status_code=404, detail="Thread not found"),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                store.search_project_thread(object(), owner, "storykeep", thread_id, "notes")
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_search_project_thread_pages_that_thread(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        message_id = uuid.uuid4()
+        hit = {"thread_id": thread_id, "message_id": message_id, "snippet": "notes"}
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch(
+            "app.services.junior_shared_memory.search_page",
+            return_value=([hit], str(message_id)),
+        ) as paged:
+            rows, cursor = store.search_project_thread(
+                object(),
+                owner,
+                "storykeep",
+                thread_id,
+                "notes",
+                limit=1,
+                cursor=message_id,
+            )
+        self.assertEqual(rows, [hit])
+        self.assertEqual(cursor, str(message_id))
+        self.assertEqual(paged.call_args.args[2], "notes")
+        self.assertEqual(paged.call_args.kwargs["thread_id"], thread_id)
+        self.assertEqual(paged.call_args.kwargs["limit"], 1)
+
     def test_project_thread_search_hit_owned_is_404_off_thread(self):
         owner = _owner()
         thread_id = uuid.uuid4()
@@ -2102,6 +2140,50 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(changed.call_args.kwargs["venue"], "windows")
         self.assertTrue(changed.call_args.kwargs["set_snippet"])
         self.assertTrue(changed.call_args.kwargs["set_venue"])
+
+    def test_project_thread_search_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        message_id = uuid.uuid4()
+        hit = {
+            "thread_id": thread_id,
+            "thread_title": "Notes",
+            "message_id": message_id,
+            "snippet": "pinned snippet",
+            "venue": "phone",
+            "created_at": now,
+            "rank": 0.4,
+        }
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.search_project_thread",
+            return_value=([hit], str(message_id)),
+        ) as listed:
+            page = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/search",
+                params={"q": "notes", "limit": 1, "cursor": str(message_id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["snippet"], "pinned snippet")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(message_id))
+        self.assertEqual(listed.call_args.args[2], "storykeep")
+        self.assertEqual(listed.call_args.args[3], thread_id)
+        self.assertEqual(listed.call_args.args[4], "notes")
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+
+        with patch(
+            "app.routers.junior_shared.store.search_project_thread",
+            return_value=([hit], None),
+        ) as ran:
+            posted = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/search",
+                json={"q": "notes"},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()[0]["snippet"], "pinned snippet")
+        self.assertEqual(ran.call_args.args[2], "storykeep")
+        self.assertEqual(ran.call_args.args[3], thread_id)
+        self.assertEqual(ran.call_args.args[4], "notes")
 
     def test_project_thread_memories_routes(self):
         now = datetime.now(timezone.utc)

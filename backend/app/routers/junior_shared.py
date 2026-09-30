@@ -32,6 +32,7 @@ from app.schemas import (
     JuniorSharedSearchHitIn,
     JuniorSharedSearchHitOut,
     JuniorProjectSearchIn,
+    JuniorProjectThreadSearchIn,
     JuniorThreadSearchIn,
     JuniorSharedThreadIn,
     JuniorSharedThreadOut,
@@ -1734,6 +1735,66 @@ def update_project_thread_agent(
     db.commit()
     db.refresh(row)
     return JuniorAgentRunOut.model_validate(row)
+
+
+@router.get(
+    "/projects/{slug}/threads/{thread_id}/search",
+    response_model=list[JuniorSharedSearchHitOut],
+)
+def list_project_thread_search(
+    slug: str,
+    thread_id: UUID,
+    response: Response,
+    q: str = Query(min_length=1, max_length=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorSharedSearchHitOut]:
+    """Search hits on one thread of this project. 404 if the thread is not on the project."""
+    hits, next_cursor = store.search_project_thread(
+        db,
+        user,
+        slug,
+        thread_id,
+        q,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSharedSearchHitOut.model_validate(hit) for hit in hits]
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/search",
+    response_model=list[JuniorSharedSearchHitOut],
+)
+def search_project_thread(
+    slug: str,
+    thread_id: UUID,
+    payload: JuniorProjectThreadSearchIn,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=25, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorSharedSearchHitOut]:
+    """Run a search on this project thread. Replay stays on this route."""
+    hits, next_cursor = store.search_project_thread(
+        db,
+        user,
+        slug,
+        thread_id,
+        payload.q,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSharedSearchHitOut.model_validate(hit) for hit in hits]
 
 
 @router.get(

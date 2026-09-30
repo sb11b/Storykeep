@@ -65,7 +65,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-search-hit-get-v1"
+HEALTH_STAMP = "junior-client-project-thread-search-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -258,6 +258,14 @@ def _project_thread_tail(path: str) -> str | None:
     return "/".join(parts[3:])
 
 
+def _is_project_thread_search_create_path(path: str) -> bool:
+    """True only for /projects/{slug}/threads/{thread_id}/search.
+
+    A slug of search is the project name, not this collection.
+    """
+    return _project_thread_tail(path) == "search"
+
+
 def _is_project_thread_search_update_path(path: str) -> bool:
     """True only for /projects/{slug}/threads/{thread_id}/search/{message_id}.
 
@@ -361,12 +369,20 @@ def _is_thread_search_update_path(path: str) -> bool:
 
 
 def _is_thread_search_create_path(path: str) -> bool:
+    if _is_project_thread_search_create_path(path):
+        return False
     cleaned = (path or "").rstrip("/")
+    if "/projects/" in cleaned:
+        return False
     return "/threads/" in cleaned and cleaned.endswith("/search")
 
 
 def _is_project_search_create_path(path: str) -> bool:
+    if _is_project_thread_search_create_path(path):
+        return False
     cleaned = (path or "").rstrip("/")
+    if "/threads/" in cleaned:
+        return False
     return "/projects/" in cleaned and cleaned.endswith("/search")
 
 
@@ -608,6 +624,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if _is_project_thread_search_update_path(path):
             return "project_thread_search_update"
+        if _is_project_thread_search_create_path(path):
+            return "project_thread_search"
         if _is_project_thread_agent_update_path(path):
             return "project_thread_agent_update"
         if _is_project_thread_agent_create_path(path):
@@ -801,6 +819,12 @@ class SharedMemoryClient:
                 slug=str(post.get("slug") or post.get("project_slug") or self.project_slug),
                 thread_id=thread_id,
                 q=post.get("q"),
+            )
+        if kind == "project_thread_search" and thread_id:
+            return self.search_project_thread(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                thread_id,
+                str(post.get("q") or text),
             )
         if kind == "project_thread_search_update" and thread_id:
             message_id = post.get("message_id") or post.get("id")
@@ -1040,6 +1064,8 @@ class SharedMemoryClient:
             return
         if _is_project_thread_search_update_path(path):
             kind = "project_thread_search_update"
+        elif _is_project_thread_search_create_path(path):
+            kind = "project_thread_search"
         elif _is_project_thread_agent_update_path(path):
             kind = "project_thread_agent_update"
         elif _is_project_thread_agent_create_path(path):
@@ -2127,6 +2153,39 @@ class SharedMemoryClient:
             action="update this project thread agent",
             body=body,
             json=json_body,
+        )
+
+    def get_project_thread_search(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        query: str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id) or {}
+        params["q"] = query
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/search",
+            action="load these project thread search hits",
+            params=params,
+        )
+
+    def search_project_thread(self, slug: str, thread_id: UUID | str, query: str) -> Any:
+        body: dict[str, Any] = {
+            "slug": slug,
+            "project_slug": slug,
+            "thread_id": str(thread_id),
+            "q": query,
+        }
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/search",
+            action="run this project thread search",
+            body=body,
+            json={"q": query},
         )
 
     def get_project_thread_search_hit(

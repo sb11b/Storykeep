@@ -862,6 +862,12 @@ class JuniorProjectSearchIn(BaseModel):
     q: str = Field(min_length=1, max_length=200)
 
 
+class JuniorProjectThreadSearchIn(BaseModel):
+    """Search recorded on POST /projects/{slug}/threads/{thread_id}/search. Ids are the path."""
+
+    q: str = Field(min_length=1, max_length=200)
+
+
 class JuniorSharedSearchHitOut(BaseModel):
     thread_id: uuid.UUID
     thread_title: str | None = None

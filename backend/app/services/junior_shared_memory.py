@@ -1933,6 +1933,30 @@ def project_thread_agent_owned(
     return row
 
 
+def search_project_thread(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    query: str,
+    *,
+    limit: int | None = 25,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Page search hits on this project thread. 404 if the thread is not on the project."""
+    project_thread_owned(db, user, slug, thread_id)
+    return search_page(
+        db,
+        user,
+        query,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+        thread_id=thread_id,
+    )
+
+
 def project_thread_search_hit_owned(
     db: Session, user: User, slug: str, thread_id: UUID, message_id: UUID
 ) -> dict[str, Any]:

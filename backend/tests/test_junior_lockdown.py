@@ -110,6 +110,7 @@ class JuniorSharedLockdownTests(unittest.TestCase):
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/memories",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/agents/{uuid.uuid4()}",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/agents",
+            f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/search?q=hello",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/search/{uuid.uuid4()}",
         ):
             response = client.get(path)
