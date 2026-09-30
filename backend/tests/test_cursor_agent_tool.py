@@ -551,11 +551,48 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertEqual(params["repo"], "github.com/sb11b/Storykeep-")
         self.assertEqual(params["prNumber"], "12")
 
-    @patch("app.services.cursor_agent_tool._analytics_get", return_value=(403, {"message": "no"}))
-    def test_bugbot_section_reports_missing_scope(self, analytics: MagicMock) -> None:
+    @patch("app.services.github_tool.bugbot_pull_review", return_value=None)
+    @patch("app.services.cursor_agent_tool._analytics_get", return_value=(401, {"message": "Invalid Team API Key"}))
+    def test_team_key_rejection_waits_for_the_pull_request_review(self, analytics: MagicMock, github_review: MagicMock) -> None:
         text, done = cursor_agent_tool.bugbot_section("https://github.com/sb11b/Storykeep-/pull/3")
+        self.assertFalse(done)
+        self.assertEqual(text, "")
+        self.assertNotIn("CURSOR_ANALYTICS_KEY", text)
+        analytics.assert_called_once()
+        github_review.assert_called_once_with(3)
+
+    @patch(
+        "app.services.github_tool.bugbot_pull_review",
+        return_value={
+            "commit_sha": "7487cb1e2c58",
+            "pr_number": 10,
+            "bugs_found": 1,
+            "show_cost": False,
+            "dry_run": False,
+            "bugs": [
+                {
+                    "comment_id": "4139186158",
+                    "resolution_status": "unresolved",
+                    "severity": "low",
+                    "title": "Project slug memories breaks update replay",
+                    "description": "A project slug of memories can replay as a memory write.",
+                    "locations": [{"file": "backend/app/services/junior_shared_clients.py", "start_line": 131, "end_line": 131}],
+                }
+            ],
+        },
+    )
+    @patch("app.services.cursor_agent_tool._analytics_get", return_value=(401, {"message": "Invalid Team API Key"}))
+    def test_team_key_rejection_uses_the_posted_review(self, analytics: MagicMock, github_review: MagicMock) -> None:
+        text, done = cursor_agent_tool.bugbot_section("https://github.com/sb11b/Storykeep-/pull/10")
         self.assertTrue(done)
-        self.assertIn("read:*", text)
+        self.assertIn("Commit: 7487cb1e2c58", text)
+        self.assertIn("Findings: 1", text)
+        self.assertIn("low — unresolved — comment 4139186158", text)
+        self.assertIn("Project slug memories breaks update replay", text)
+        self.assertIn("backend/app/services/junior_shared_clients.py:131", text)
+        self.assertNotIn("Cost:", text)
+        self.assertNotIn("CURSOR_ANALYTICS_KEY", text)
+        github_review.assert_called_once()
         analytics.assert_called_once()
 
     @patch("app.services.cursor_agent_tool.settings")

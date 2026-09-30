@@ -168,6 +168,136 @@ def _post(path: str, payload: dict[str, Any]) -> tuple[int, Any]:
     return response.status_code, body
 
 
+_BUGBOT_LOGINS = frozenset({"cursor[bot]", "cursor"})
+_SEV_RE = re.compile(r"\*\*(Low|Medium|High|Critical)\s+Severity\*\*", re.I)
+_TITLE_RE = re.compile(r"^###\s+(.+)$", re.M)
+_DESC_RE = re.compile(r"<!-- DESCRIPTION START -->(.*?)<!-- DESCRIPTION END -->", re.S)
+_COUNT_RE = re.compile(r"found\s+(\d+)\s+potential\s+issue", re.I)
+
+
+def _bugbot_login(user: object) -> bool:
+    if not isinstance(user, dict):
+        return False
+    return str(user.get("login") or "").strip().lower() in _BUGBOT_LOGINS
+
+
+def parse_bugbot_comment(body: str) -> dict[str, str]:
+    text = body or ""
+    title = _TITLE_RE.search(text)
+    severity = _SEV_RE.search(text)
+    description = _DESC_RE.search(text)
+    return {
+        "title": title.group(1).strip() if title else "",
+        "severity": severity.group(1).lower() if severity else "",
+        "description": " ".join(description.group(1).split()) if description else "",
+    }
+
+
+def _resolved_comment_ids(pr_number: int) -> set[str]:
+    repo = _repo()
+    if "/" not in repo:
+        return set()
+    owner, name = repo.split("/", 1)
+    query = """
+    query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          reviewThreads(first: 50) {
+            nodes {
+              isResolved
+              comments(first: 10) { nodes { databaseId } }
+            }
+          }
+        }
+      }
+    }
+    """
+    token = _token()
+    if not token:
+        return set()
+    try:
+        with httpx.Client(timeout=TIMEOUT_SEC) as client:
+            response = client.post(
+                f"{API_ROOT}/graphql",
+                headers=_headers(),
+                json={"query": query, "variables": {"owner": owner, "name": name, "number": pr_number}},
+            )
+        body = response.json()
+    except (httpx.HTTPError, json.JSONDecodeError):
+        return set()
+    if response.status_code >= 400 or not isinstance(body, dict):
+        return set()
+    data = body.get("data") if isinstance(body.get("data"), dict) else {}
+    repository = data.get("repository") if isinstance(data.get("repository"), dict) else {}
+    pull = repository.get("pullRequest") if isinstance(repository.get("pullRequest"), dict) else {}
+    threads = pull.get("reviewThreads") if isinstance(pull.get("reviewThreads"), dict) else {}
+    nodes = threads.get("nodes") if isinstance(threads.get("nodes"), list) else []
+    resolved: set[str] = set()
+    for thread in nodes:
+        if not isinstance(thread, dict) or not thread.get("isResolved"):
+            continue
+        comments = thread.get("comments") if isinstance(thread.get("comments"), dict) else {}
+        for comment in comments.get("nodes") or []:
+            if isinstance(comment, dict) and comment.get("databaseId") is not None:
+                resolved.add(str(comment["databaseId"]))
+    return resolved
+
+
+def bugbot_pull_review(pr_number: int) -> dict[str, Any] | None:
+    """Posted Bugbot review on a pull request. None when Bugbot has not commented yet."""
+    repo = _repo()
+    status_code, reviews = _get(f"/repos/{repo}/pulls/{pr_number}/reviews?per_page=30")
+    if status_code >= 400 or not isinstance(reviews, list):
+        return None
+    chosen = None
+    for review in reviews:
+        if not isinstance(review, dict) or not _bugbot_login(review.get("user")):
+            continue
+        if "BUGBOT_REVIEW" in (review.get("body") or ""):
+            chosen = review
+    status_code, comments = _get(f"/repos/{repo}/pulls/{pr_number}/comments?per_page=100")
+    if status_code >= 400 or not isinstance(comments, list):
+        comments = []
+    findings: list[dict[str, Any]] = []
+    for comment in comments:
+        if not isinstance(comment, dict) or not _bugbot_login(comment.get("user")):
+            continue
+        parsed = parse_bugbot_comment(str(comment.get("body") or ""))
+        if not parsed["title"]:
+            continue
+        line = comment.get("line") or comment.get("original_line")
+        path = str(comment.get("path") or "").strip()
+        findings.append(
+            {
+                "comment_id": str(comment.get("id") or ""),
+                "resolution_status": "unresolved",
+                "severity": parsed["severity"],
+                "title": parsed["title"],
+                "description": parsed["description"],
+                "locations": [{"file": path, "start_line": line, "end_line": line}] if path else [],
+            }
+        )
+    if chosen is None and not findings:
+        return None
+    summary = str((chosen or {}).get("body") or "")
+    count = _COUNT_RE.search(summary)
+    found = int(count.group(1)) if count else len(findings)
+    resolved = _resolved_comment_ids(pr_number)
+    for finding in findings:
+        if finding["comment_id"] and finding["comment_id"] in resolved:
+            finding["resolution_status"] = "resolved"
+    return {
+        "commit_sha": str((chosen or {}).get("commit_id") or ""),
+        "pr_number": pr_number,
+        "bugs_found": found,
+        "cost_cents": None,
+        "show_cost": False,
+        "dry_run": False,
+        "publication_status": "posted",
+        "bugs": findings,
+    }
+
+
 def _get(path: str) -> tuple[int, Any]:
     token = _token()
     if not token:

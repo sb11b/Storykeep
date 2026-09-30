@@ -1762,6 +1762,10 @@ def _finding_lines(bug: dict[str, Any], index: int, *, dry_run: bool) -> list[st
         lines = [f"{index}. {' — '.join(parts)}"]
         if title:
             lines.append(f"   {title}")
+        description = " ".join(str(bug.get("description") or "").split())
+        if description:
+            lines.append(f"   {description[:400]}")
+        lines.extend(_location_lines(bug.get("locations")))
         return lines
     head = title or "Finding"
     prefix = f"{index}. {severity} — {head}" if severity else f"{index}. {head}"
@@ -1769,8 +1773,14 @@ def _finding_lines(bug: dict[str, Any], index: int, *, dry_run: bool) -> list[st
     description = " ".join(str(bug.get("description") or "").split())
     if description:
         lines.append(f"   {description[:400]}")
-    locations = bug.get("locations") if isinstance(bug.get("locations"), list) else []
-    for loc in locations:
+    lines.extend(_location_lines(bug.get("locations")))
+    return lines
+
+
+def _location_lines(locations: Any) -> list[str]:
+    rows = locations if isinstance(locations, list) else []
+    lines: list[str] = []
+    for loc in rows:
         if not isinstance(loc, dict):
             continue
         file_name = str(loc.get("file") or "").strip()
@@ -1800,7 +1810,8 @@ def format_bugbot_reviews(reviews: list[Any]) -> str:
             blocks.append(f"Pull request: {number}")
         blocks.append(f"Commit: {short}")
         blocks.append(f"Findings: {found if found is not None else 0}")
-        blocks.append(f"Cost: {format_cost_cents(review.get('cost_cents'))}")
+        if review.get("show_cost", True):
+            blocks.append(f"Cost: {format_cost_cents(review.get('cost_cents'))}")
         bugs = review.get("bugs") if isinstance(review.get("bugs"), list) else []
         for index, bug in enumerate(bugs, start=1):
             if isinstance(bug, dict):
@@ -1822,8 +1833,6 @@ def fetch_bugbot_reviews(pr_number: int, *, repo_slug: str | None = None) -> tup
             "pageSize": "20",
         },
     )
-    if status_code in (401, 403):
-        return [], "Bugbot review analytics need an API key with read:* scope. Set CURSOR_ANALYTICS_KEY on the Storykeep service."
     if status_code >= 400 or not isinstance(body, dict):
         return [], None
     data = body.get("data")
@@ -1845,9 +1854,13 @@ def bugbot_section(pr_url: str | None, *, repo_slug: str | None = None) -> tuple
     number = pr_number_from_url(pr_url)
     if number is None:
         return "Review analytics\n\nNo pull request yet, so there is no Bugbot review to show.", True
-    reviews, error = fetch_bugbot_reviews(number, repo_slug=repo_slug)
-    if error:
-        return f"Review analytics\n\n{error}", True
+    reviews, _error = fetch_bugbot_reviews(number, repo_slug=repo_slug)
+    if not reviews:
+        from app.services import github_tool
+
+        fallback = github_tool.bugbot_pull_review(number)
+        if fallback:
+            reviews = [fallback]
     if not reviews:
         return "", False
     return format_bugbot_reviews(reviews), True
