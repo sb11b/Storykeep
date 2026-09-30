@@ -1446,6 +1446,83 @@ def update_project_thread_message(
     return JuniorSharedMessageOut.model_validate(row)
 
 
+@router.get(
+    "/projects/{slug}/threads/{thread_id}/continue",
+    response_model=JuniorSharedContinueOut,
+)
+def get_project_thread_continue(
+    slug: str,
+    thread_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> JuniorSharedContinueOut:
+    """Continue history for one thread on this project. 404 if the thread is not on the project."""
+    thread = store.project_thread_owned(db, user, slug, thread_id)
+    history, next_cursor = store.list_messages_page(
+        db, user, thread.id, limit=limit, cursor=cursor, before_id=before_id
+    )
+    _page_headers(response, next_cursor)
+    return JuniorSharedContinueOut(
+        thread=JuniorSharedThreadOut.model_validate(thread),
+        messages=[JuniorSharedMessageOut.model_validate(row) for row in history],
+    )
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/continue",
+    response_model=JuniorSharedContinueOut,
+)
+def continue_project_thread(
+    slug: str,
+    thread_id: UUID,
+    response: Response,
+    payload: JuniorSharedContinueIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> JuniorSharedContinueOut:
+    """Resume this project thread. Replay stays on this route, not POST /projects/{slug}/continue."""
+    thread = store.project_thread_owned(db, user, slug, thread_id)
+    user_row = junior_row = None
+    reply_status = None
+    incoming = payload or JuniorSharedContinueIn()
+    body = incoming.body
+    if body:
+        thread, user_row, junior_row, reply_status = store.continue_project_thread(
+            db,
+            user,
+            slug,
+            thread_id,
+            content=body,
+            venue=incoming.venue,
+            meta=incoming.meta,
+            device_label=incoming.device_label,
+        )
+        db.commit()
+        db.refresh(thread)
+        db.refresh(user_row)
+        if junior_row is not None:
+            db.refresh(junior_row)
+    history, next_cursor = store.list_messages_page(
+        db, user, thread.id, limit=limit, cursor=cursor, before_id=before_id
+    )
+    _page_headers(response, next_cursor)
+    return JuniorSharedContinueOut(
+        thread=JuniorSharedThreadOut.model_validate(thread),
+        messages=[JuniorSharedMessageOut.model_validate(row) for row in history],
+        user_message=JuniorSharedMessageOut.model_validate(user_row) if user_row else None,
+        junior_message=JuniorSharedMessageOut.model_validate(junior_row) if junior_row else None,
+        reply_status=reply_status,
+        detail=store.REPLY_STUB_DETAIL if user_row is not None and junior_row is None else None,
+    )
+
+
 @router.get("/projects/{slug}/threads/{thread_id}", response_model=JuniorSharedThreadOut)
 def get_project_thread(
     slug: str,

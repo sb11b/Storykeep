@@ -1308,6 +1308,122 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(created.call_args.kwargs["venue"], "phone")
         self.assertEqual(created.call_args.kwargs["meta"], {"source": "phone"})
 
+    def test_continue_project_thread_uses_that_thread(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        saved = (SimpleNamespace(id=thread_id), SimpleNamespace(id=uuid.uuid4()), None, "stub")
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch("app.services.junior_shared_memory.post_turn", return_value=saved) as posted:
+            row = store.continue_project_thread(
+                object(),
+                owner,
+                "storykeep",
+                thread_id,
+                content="pick up the trailer",
+                venue="phone",
+                meta={"source": "phone"},
+                device_label="junior-mobile",
+            )
+        self.assertEqual(row, saved)
+        self.assertEqual(posted.call_args.kwargs["thread_id"], thread_id)
+        self.assertEqual(posted.call_args.kwargs["content"], "pick up the trailer")
+        self.assertEqual(posted.call_args.kwargs["venue"], "phone")
+        self.assertEqual(posted.call_args.kwargs["meta"], {"source": "phone"})
+        self.assertEqual(posted.call_args.kwargs["device_label"], "junior-mobile")
+
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            side_effect=HTTPException(status_code=404, detail="Thread not found"),
+        ), patch("app.services.junior_shared_memory.post_turn") as posted:
+            with self.assertRaises(HTTPException) as caught:
+                store.continue_project_thread(
+                    object(),
+                    owner,
+                    "missing",
+                    thread_id,
+                    content="no",
+                    venue="phone",
+                    meta=None,
+                )
+        self.assertEqual(caught.exception.status_code, 404)
+        posted.assert_not_called()
+
+    def test_project_thread_continue_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        thread = SimpleNamespace(
+            id=thread_id,
+            title="Storykeep",
+            venue_last="phone",
+            status="open",
+            summary=None,
+            created_at=now,
+            updated_at=now,
+        )
+        message = SimpleNamespace(
+            id=uuid.uuid4(),
+            thread_id=thread_id,
+            role="user",
+            content="pick up the trailer",
+            venue="phone",
+            meta={"source": "phone"},
+            created_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.project_thread_owned",
+            return_value=thread,
+        ) as loaded, patch(
+            "app.routers.junior_shared.store.list_messages_page",
+            return_value=([message], str(message.id)),
+        ) as history:
+            page = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/continue",
+                params={"limit": 1, "cursor": str(message.id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()["thread"]["id"], str(thread_id))
+        self.assertEqual(page.json()["messages"][0]["content"], "pick up the trailer")
+        self.assertIsNone(page.json()["user_message"])
+        self.assertEqual(page.headers.get("x-next-cursor"), str(message.id))
+        self.assertEqual(loaded.call_args.args[2], "storykeep")
+        self.assertEqual(loaded.call_args.args[3], thread_id)
+        self.assertEqual(history.call_args.kwargs["limit"], 1)
+
+        with patch(
+            "app.routers.junior_shared.store.project_thread_owned",
+            return_value=thread,
+        ), patch(
+            "app.routers.junior_shared.store.continue_project_thread",
+            return_value=(thread, message, None, "stubbed_no_key"),
+        ) as posted, patch(
+            "app.routers.junior_shared.store.list_messages_page",
+            return_value=([message], None),
+        ):
+            saved = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/continue",
+                json={"text": "pick up the trailer", "venue": "phone", "meta": {"source": "phone"}},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["thread"]["id"], str(thread_id))
+        self.assertEqual(saved.json()["user_message"]["content"], "pick up the trailer")
+        self.assertEqual(posted.call_args.args[2], "storykeep")
+        self.assertEqual(posted.call_args.args[3], thread_id)
+        self.assertEqual(posted.call_args.kwargs["content"], "pick up the trailer")
+        self.assertEqual(posted.call_args.kwargs["venue"], "phone")
+        self.assertEqual(posted.call_args.kwargs["meta"], {"source": "phone"})
+
+        with patch(
+            "app.routers.junior_shared.store.project_thread_owned",
+            side_effect=HTTPException(status_code=404, detail="Thread not found"),
+        ):
+            missing = TestClient(app).get(
+                f"/api/v1/junior/projects/missing/threads/{thread_id}/continue"
+            )
+        self.assertEqual(missing.status_code, 404)
+
     def test_project_thread_routes(self):
         now = datetime.now(timezone.utc)
         thread = SimpleNamespace(

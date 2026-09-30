@@ -1115,6 +1115,30 @@ def project_thread_message_owned(
     return row
 
 
+def continue_project_thread(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    content: str,
+    venue: str | None,
+    meta: dict[str, Any] | None,
+    device_label: str | None = None,
+) -> tuple[JuniorThread, JuniorThreadMessage, JuniorThreadMessage | None, str]:
+    """Resume one thread on this project. 404 if the thread is not on the project."""
+    project_thread_owned(db, user, slug, thread_id)
+    return post_turn(
+        db,
+        user,
+        thread_id=thread_id,
+        content=content,
+        venue=venue,
+        meta=meta,
+        device_label=device_label,
+    )
+
+
 def update_project_thread_message(
     db: Session,
     user: User,

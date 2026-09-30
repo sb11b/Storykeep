@@ -110,7 +110,7 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_matches_build(self):
-        self.assertEqual(HEALTH_STAMP, "junior-cursor-automations-v1")
+        self.assertEqual(HEALTH_STAMP, "junior-client-project-thread-continue-get-v1")
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
@@ -166,6 +166,9 @@ class SharedClientSmokeTests(unittest.TestCase):
         )
         self.assertTrue(
             any(path.endswith("/projects/{slug}/threads/{thread_id}/messages") for path in junior)
+        )
+        self.assertTrue(
+            any(path.endswith("/projects/{slug}/threads/{thread_id}/continue") for path in junior)
         )
 
     def test_phone_and_windows_require_login(self):
@@ -357,6 +360,11 @@ class SharedClientSmokeTests(unittest.TestCase):
             _windows(client).get_project_thread_messages("storykeep", uuid.uuid4())
         self.assertEqual(project_thread_messages.exception.status_code, 401)
         self.assertIn("did not load these project thread messages", project_thread_messages.exception.user_message)
+
+        with self.assertRaises(SharedMemoryError) as project_thread_continue:
+            _phone(client).get_project_thread_continue("storykeep", uuid.uuid4())
+        self.assertEqual(project_thread_continue.exception.status_code, 401)
+        self.assertIn("did not load this project thread continue", project_thread_continue.exception.user_message)
 
     def test_demo_is_forbidden_for_both_clients(self):
         demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
@@ -2309,6 +2317,62 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertNotIn(("POST", f"/api/v1/junior/threads/{thread_id}/messages"), replay_http.calls)
         self.assertFalse(
             any(call[1].rstrip("/").endswith(f"/messages/{thread_id}") for call in replay_http.calls)
+        )
+        self.assertFalse(path.exists())
+
+    def test_project_thread_continue_403_and_replay(self):
+        thread_id = uuid.uuid4()
+        http = _ScriptedHttp([200, 403, 403, 403])
+        page = _phone(http).get_project_thread_continue(
+            "storykeep", thread_id, limit=2, cursor="abc"
+        )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(
+            http.calls[0],
+            ("GET", f"/api/v1/junior/projects/storykeep/threads/{thread_id}/continue"),
+        )
+        self.assertEqual(http.params[0], {"limit": 2, "cursor": "abc"})
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_project_thread_continue("storykeep", thread_id)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load this project thread continue", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as continued:
+                phone_client(fail, queue_path=path).continue_project_thread(
+                    "storykeep",
+                    thread_id,
+                    "pick up the trailer",
+                    venue="phone",
+                    meta={"source": "phone"},
+                )
+        self.assertIn("did not save this project thread continue", continued.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_thread_continue")
+        self.assertEqual(restarted.last_failed_post["content"], "pick up the trailer")
+        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
+        self.assertEqual(restarted.last_failed_post["thread_id"], str(thread_id))
+        self.assertEqual(restarted.last_failed_post["message_venue"], "phone")
+        self.assertEqual(restarted.last_failed_post["meta"], {"source": "phone"})
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            replay_http.calls,
+            [("POST", f"/api/v1/junior/projects/storykeep/threads/{thread_id}/continue")],
+        )
+        self.assertEqual(replay_http.json_bodies[0]["text"], "pick up the trailer")
+        self.assertEqual(replay_http.json_bodies[0]["venue"], "phone")
+        self.assertEqual(replay_http.json_bodies[0]["meta"], {"source": "phone"})
+        self.assertNotIn(("POST", "/api/v1/junior/projects/storykeep/continue"), replay_http.calls)
+        self.assertNotIn(("POST", f"/api/v1/junior/threads/{thread_id}/continue"), replay_http.calls)
+        self.assertNotIn(
+            ("POST", f"/api/v1/junior/projects/storykeep/threads/{thread_id}/messages"),
+            replay_http.calls,
         )
         self.assertFalse(path.exists())
 

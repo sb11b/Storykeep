@@ -105,6 +105,7 @@ class JuniorSharedLockdownTests(unittest.TestCase):
             "/api/v1/junior/projects/storykeep/threads",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/messages/{uuid.uuid4()}",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/messages",
+            f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/continue",
         ):
             response = client.get(path)
             self.assertEqual(response.status_code, 403, path)
