@@ -1139,6 +1139,43 @@ def continue_project_thread(
     )
 
 
+def project_thread_memory_owned(
+    db: Session, user: User, slug: str, thread_id: UUID, memory_id: UUID
+) -> JuniorMemoryFact:
+    project_thread_owned(db, user, slug, thread_id)
+    row = memory_owned(db, user, memory_id)
+    if row.source_thread != thread_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    return row
+
+
+def update_project_thread_memory(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    memory_id: UUID,
+    *,
+    content: str | None = None,
+    kind: str | None = None,
+    source_thread: UUID | None = None,
+    set_kind: bool = False,
+    set_source_thread: bool = False,
+) -> JuniorMemoryFact:
+    """Update a memory sourced from this project thread. 404 if it is not on that thread."""
+    project_thread_memory_owned(db, user, slug, thread_id, memory_id)
+    return update_memory(
+        db,
+        user,
+        memory_id,
+        content=content,
+        kind=kind,
+        source_thread=source_thread,
+        set_kind=set_kind,
+        set_source_thread=set_source_thread,
+    )
+
+
 def update_project_thread_message(
     db: Session,
     user: User,
