@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 import uuid
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -233,6 +233,86 @@ class JuniorThreadMemoryNoteRouterTests(unittest.TestCase):
         self.assertEqual(posted.status_code, 403)
         self.assertNotIn("leaked", posted.text)
         got = client.get(f"/api/v1/junior/threads/{uuid.uuid4()}/memory")
+        self.assertEqual(got.status_code, 403)
+
+
+class JuniorProjectThreadMemoryNoteRouterTests(unittest.TestCase):
+    def _client(self, db, user) -> TestClient:
+        app = FastAPI()
+        app.include_router(shared_router.router, prefix="/api/v1")
+
+        def fake_db():
+            yield db
+
+        app.dependency_overrides[get_db] = fake_db
+        app.dependency_overrides[get_current_user] = lambda: user
+        return TestClient(app)
+
+    def test_missing_project_thread_is_404_and_does_not_append(self):
+        owner = SimpleNamespace(id=uuid.uuid4(), email="stevebitsko@duck.com", is_demo_locked=False)
+        note = SimpleNamespace(markdown="Keep this.", updated_at=None)
+        db = MagicMock()
+        db.get.return_value = note
+        client = self._client(db, owner)
+        thread_id = uuid.uuid4()
+        missing = HTTPException(status_code=404, detail="Thread not found")
+        with patch(
+            "app.routers.junior_shared.store.project_thread_owned",
+            side_effect=missing,
+        ):
+            got = client.get(f"/api/v1/junior/projects/storykeep/threads/{thread_id}/memory")
+            self.assertEqual(got.status_code, 404)
+            posted = client.post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/memory",
+                json={"text": "nope"},
+            )
+        self.assertEqual(posted.status_code, 404)
+        self.assertEqual(note.markdown, "Keep this.")
+        db.commit.assert_not_called()
+
+    def test_post_appends_when_thread_is_on_project(self):
+        owner_id = uuid.uuid4()
+        owner = SimpleNamespace(id=owner_id, email="stevebitsko@duck.com", is_demo_locked=False)
+        thread = SimpleNamespace(id=uuid.uuid4(), user_id=owner_id)
+        note = SimpleNamespace(markdown="Keep this.", updated_at=None)
+        db = MagicMock()
+        db.get.return_value = note
+        client = self._client(db, owner)
+        with patch(
+            "app.routers.junior_shared.store.project_thread_owned",
+            return_value=thread,
+        ) as owned:
+            got = client.get(f"/api/v1/junior/projects/storykeep/threads/{thread.id}/memory")
+            self.assertEqual(got.status_code, 200)
+            self.assertEqual(got.json()["markdown"], "Keep this.")
+            blank = client.post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread.id}/memory",
+                json={"text": "   "},
+            )
+            self.assertEqual(blank.status_code, 400)
+            self.assertEqual(note.markdown, "Keep this.")
+            posted = client.post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread.id}/memory",
+                json={"text": "Added line"},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["markdown"], "Keep this.\n\nAdded line")
+        self.assertTrue(posted.json()["markdown"].startswith("Keep this."))
+        self.assertEqual(owned.call_args.args[2], "storykeep")
+        self.assertEqual(owned.call_args.args[3], thread.id)
+        db.commit.assert_called()
+
+    def test_demo_get_and_post_are_403(self):
+        demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
+        client = self._client(MagicMock(), demo)
+        thread_id = uuid.uuid4()
+        posted = client.post(
+            f"/api/v1/junior/projects/storykeep/threads/{thread_id}/memory",
+            json={"text": "leaked"},
+        )
+        self.assertEqual(posted.status_code, 403)
+        self.assertNotIn("leaked", posted.text)
+        got = client.get(f"/api/v1/junior/projects/storykeep/threads/{thread_id}/memory")
         self.assertEqual(got.status_code, 403)
 
 

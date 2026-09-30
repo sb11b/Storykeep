@@ -175,7 +175,7 @@ class CursorAgentToolTests(unittest.TestCase):
         task = cursor_agent_tool.next_step_task(msg)
         self.assertIsNotNone(task)
         assert task is not None
-        self.assertIn("Sequenced #57", task)
+        self.assertIn("Sequenced #58", task)
         self.assertIn("CodeRabbit reviews it", task)
         self.assertIn("Bugbot is off", task)
         self.assertIn("Do not comment bugbot run", task)
@@ -389,6 +389,10 @@ class CursorAgentToolTests(unittest.TestCase):
         assert fifty_six is not None
         self.assertIn("Sequenced #56", fifty_six)
         self.assertIn("junior-client-thread-memory-note-get-v1", fifty_six)
+        fifty_seven = cursor_agent_tool.next_step_task("go ahead and start sequenced #57")
+        assert fifty_seven is not None
+        self.assertIn("Sequenced #57", fifty_seven)
+        self.assertIn("junior-client-project-thread-memory-note-get-v1", fifty_seven)
 
     def test_sequence_number_five_starts(self):
         msg = "go ahead and start Sequence number five."
@@ -611,6 +615,10 @@ class CursorAgentToolTests(unittest.TestCase):
         assert fifty_six is not None
         self.assertIn("Sequenced #56", fifty_six)
         self.assertIn("junior-client-thread-memory-note-get-v1", fifty_six)
+        fifty_seven = cursor_agent_tool.sequenced_task("sequenced #57")
+        assert fifty_seven is not None
+        self.assertIn("Sequenced #57", fifty_seven)
+        self.assertIn("junior-client-project-thread-memory-note-get-v1", fifty_seven)
 
     @patch("app.services.cursor_agent_tool.httpx.Client")
     @patch("app.services.cursor_agent_tool.settings")

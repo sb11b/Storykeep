@@ -349,6 +349,29 @@ _NEXT_STEP_RE = re.compile(
     re.I,
 )
 
+SEQ_57_TASK = """Sequenced #57 — next after junior-client-thread-memory-note-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #54, #55, or #56).
+
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #56 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main. CodeRabbit reviews it. Bugbot is off. Do not comment bugbot run. Do not merge that pull request.
+
+Already done on main:
+- Phone and Windows clients POST /threads/{id}/memory to append the standing note; the original text stays
+- GET /threads/{id}/memory loads that note when the thread belongs to the user
+- Failed appends replay on POST /threads/{id}/memory, not POST /memory, not PUT /memory, not POST /memories, and not POST /threads/{id}/memories
+- require_user; demo 403; no new public routes
+- Health stamp junior-client-thread-memory-note-get-v1
+
+Your job (#57):
+1. Both clients POST /projects/{slug}/threads/{thread_id}/memory to append text to the standing note for that thread on the project. The original text stays. Failed writes stay on the FIFO and replay on that same route (not POST /memory, not PUT /memory, not POST /memories, not POST /threads/{id}/memory, and not POST /projects/{slug}/threads/{thread_id}/memories). Same auth rule. No silent drop. 404 if the project is missing or the thread is not on that project.
+2. Both clients call GET /projects/{slug}/threads/{thread_id}/memory (same auth). 404 in those same cases. Still no public routes.
+3. Keep SQL idempotent; no DROP TABLE. No new public routes.
+4. Extend smoke tests for project-thread memory-note replay, project-thread memory-note GET, and 403. Keep existing tests green.
+5. Health stamp: junior-client-project-thread-memory-note-get-v1
+6. Commit on a cursor/* branch and push that branch only.
+
+Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
+"""
+
+
 SEQ_56_TASK = """Sequenced #56 — next after junior-client-memory-note-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #54, or #55).
 
 Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #55 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main. CodeRabbit reviews it. Bugbot is off. Do not comment bugbot run. Do not merge that pull request.
@@ -1668,7 +1691,7 @@ def _later_sequence_task(number: int, message: str) -> str:
     return (
         f"Sequenced #{number} on GitHub main of sb11b/Storykeep- (StoryKeep). "
         "Steve asked to start this sequence. Do not refuse. Do not ask him to define it. "
-        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #54, #55, or #56. "
+        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #54, #55, #56, or #57. "
         "Do not merge steve-bitsko Cursor PR #2. Do not change the owner email. "
         "Do not git-push to main. Do not re-run SQL. Open a pull request into main. CodeRabbit reviews it. Bugbot is off. Do not comment bugbot run. Do not merge that pull request. "
         "Commit on a cursor/* branch and push that branch only.\n\n"
@@ -1785,14 +1808,16 @@ def next_step_task(message: str) -> str | None:
         return SEQ_55_TASK
     if number == 56:
         return SEQ_56_TASK
-    if number is not None and number > 56:
+    if number == 57:
+        return SEQ_57_TASK
+    if number is not None and number > 57:
         return _later_sequence_task(number, text)
     if number == 2:
         return None
     for match in _NEXT_STEP_RE.finditer(text):
         if _negated_at(text, match.start()):
             continue
-        return _later_sequence_task(57, text)
+        return _later_sequence_task(58, text)
     return None
 
 
