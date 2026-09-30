@@ -112,6 +112,7 @@ class JuniorSharedLockdownTests(unittest.TestCase):
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/agents",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/search?q=hello",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/search/{uuid.uuid4()}",
+            f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/agent-context",
         ):
             response = client.get(path)
             self.assertEqual(response.status_code, 403, path)

@@ -1844,6 +1844,50 @@ def update_project_thread_search_hit(
     return JuniorSharedSearchHitOut.model_validate(hit)
 
 
+@router.get(
+    "/projects/{slug}/threads/{thread_id}/agent-context",
+    response_model=JuniorAgentContextOut,
+)
+def get_project_thread_agent_context(
+    slug: str,
+    thread_id: UUID,
+    q: str | None = Query(default=None, max_length=200),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentContextOut:
+    """Context pack for one thread on this project. 404 if the thread is not on the project."""
+    pack = store.project_thread_agent_context(db, user, slug, thread_id, query=q)
+    return _context_out(pack)
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/agent-context",
+    response_model=JuniorAgentContextOut,
+)
+def update_project_thread_agent_context(
+    slug: str,
+    thread_id: UUID,
+    payload: JuniorAgentContextIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorAgentContextOut:
+    """Pin this project thread's context pack. Replay stays on this route."""
+    incoming = payload or JuniorAgentContextIn()
+    fields = incoming.model_fields_set
+    pack = store.update_project_thread_agent_context(
+        db,
+        user,
+        slug,
+        thread_id,
+        query=incoming.q if "q" in fields else None,
+        thread_id_value=incoming.thread_id if "thread_id" in fields else None,
+        set_query="q" in fields,
+        set_thread_id="thread_id" in fields,
+    )
+    db.commit()
+    return _context_out(pack)
+
+
 @router.get("/projects/{slug}/threads/{thread_id}", response_model=JuniorSharedThreadOut)
 def get_project_thread(
     slug: str,

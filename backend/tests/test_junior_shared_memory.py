@@ -2185,6 +2185,103 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(ran.call_args.args[3], thread_id)
         self.assertEqual(ran.call_args.args[4], "notes")
 
+    def test_project_thread_agent_context_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        project = SimpleNamespace(
+            id=uuid.uuid4(),
+            slug="storykeep",
+            display_name="StoryKeep",
+            kind="app",
+            repo_url=None,
+            default_branch="main",
+            notes=None,
+            meta={},
+            created_at=now,
+            updated_at=now,
+        )
+        pack = {
+            "project": project,
+            "thread": None,
+            "thread_summary": "pick up finance",
+            "recent_messages": [],
+            "memories": [],
+            "search_hits": [],
+            "launch_hint": "Start a Cursor agent on storykeep",
+        }
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.project_thread_agent_context",
+            return_value=pack,
+        ) as loaded:
+            got = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/agent-context",
+                params={"q": "finance"},
+            )
+        self.assertEqual(got.status_code, 200)
+        self.assertEqual(got.json()["project"]["slug"], "storykeep")
+        self.assertEqual(got.json()["thread_summary"], "pick up finance")
+        self.assertEqual(loaded.call_args.args[2], "storykeep")
+        self.assertEqual(loaded.call_args.args[3], thread_id)
+        self.assertEqual(loaded.call_args.kwargs["query"], "finance")
+
+        with patch(
+            "app.routers.junior_shared.store.update_project_thread_agent_context",
+            return_value=pack,
+        ) as pinned:
+            posted = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/agent-context",
+                json={"q": "finance"},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["project"]["slug"], "storykeep")
+        self.assertEqual(pinned.call_args.args[2], "storykeep")
+        self.assertEqual(pinned.call_args.args[3], thread_id)
+        self.assertTrue(pinned.call_args.kwargs["set_query"])
+        self.assertEqual(pinned.call_args.kwargs["query"], "finance")
+        self.assertFalse(pinned.call_args.kwargs["set_thread_id"])
+
+    def test_update_project_thread_agent_context_pins_path_thread(self):
+        thread_id = uuid.uuid4()
+        other = uuid.uuid4()
+        with patch("app.services.junior_shared_memory.project_thread_owned", return_value=object()):
+            with self.assertRaises(HTTPException) as caught:
+                store.update_project_thread_agent_context(
+                    object(),
+                    object(),
+                    "storykeep",
+                    thread_id,
+                    thread_id_value=other,
+                    set_thread_id=True,
+                )
+        self.assertEqual(caught.exception.status_code, 404)
+
+        with patch("app.services.junior_shared_memory.project_thread_owned", return_value=object()), patch(
+            "app.services.junior_shared_memory.update_agent_context",
+            return_value={"project": None},
+        ) as pinned:
+            store.update_project_thread_agent_context(
+                object(),
+                object(),
+                "storykeep",
+                thread_id,
+                query="finance",
+                set_query=True,
+            )
+        self.assertEqual(pinned.call_args.args[2], "storykeep")
+        self.assertEqual(pinned.call_args.kwargs["thread_id"], thread_id)
+        self.assertTrue(pinned.call_args.kwargs["set_thread_id"])
+        self.assertTrue(pinned.call_args.kwargs["set_query"])
+        self.assertEqual(pinned.call_args.kwargs["query"], "finance")
+
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            side_effect=HTTPException(status_code=404, detail="Thread not found"),
+        ):
+            with self.assertRaises(HTTPException) as missing:
+                store.project_thread_agent_context(object(), object(), "storykeep", thread_id)
+        self.assertEqual(missing.exception.status_code, 404)
+
     def test_project_thread_memories_routes(self):
         now = datetime.now(timezone.utc)
         thread_id = uuid.uuid4()
