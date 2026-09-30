@@ -80,6 +80,7 @@ class JuniorSharedLockdownTests(unittest.TestCase):
             f"/api/v1/junior/memories/{uuid.uuid4()}",
             f"/api/v1/junior/agents/{uuid.uuid4()}",
             f"/api/v1/junior/sessions/{uuid.uuid4()}",
+            f"/api/v1/junior/threads/{uuid.uuid4()}/sessions/{uuid.uuid4()}",
             f"/api/v1/junior/messages/{uuid.uuid4()}",
             "/api/v1/junior/projects/storykeep",
             f"/api/v1/junior/search/{uuid.uuid4()}",

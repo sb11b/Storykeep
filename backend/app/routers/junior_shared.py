@@ -775,6 +775,44 @@ def get_session(
     return JuniorSessionOut.model_validate(store.session_owned(db, user, session_id))
 
 
+@router.get("/threads/{thread_id}/sessions/{session_id}", response_model=JuniorSessionOut)
+def get_thread_session(
+    thread_id: UUID,
+    session_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSessionOut:
+    """One session on this thread. 404 if the thread is missing or the venue does not match."""
+    return JuniorSessionOut.model_validate(
+        store.thread_session_owned(db, user, thread_id, session_id)
+    )
+
+
+@router.post("/threads/{thread_id}/sessions/{session_id}", response_model=JuniorSessionOut)
+def update_thread_session(
+    thread_id: UUID,
+    session_id: UUID,
+    payload: JuniorSessionIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSessionOut:
+    """Update a session on this thread. Replay stays on this route, not POST /sessions/{id}."""
+    incoming = payload or JuniorSessionIn()
+    fields = incoming.model_fields_set
+    row = store.update_thread_session(
+        db,
+        user,
+        thread_id,
+        session_id,
+        venue=incoming.venue if "venue" in fields else None,
+        device_label=incoming.device_label if "device_label" in fields else None,
+        set_device_label="device_label" in fields,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSessionOut.model_validate(row)
+
+
 @router.post("/sessions/{session_id}", response_model=JuniorSessionOut)
 def update_session(
     session_id: UUID,

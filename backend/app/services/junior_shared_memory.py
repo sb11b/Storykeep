@@ -252,6 +252,42 @@ def update_session(
     return row
 
 
+def thread_session_owned(
+    db: Session, user: User, thread_id: UUID, session_id: UUID
+) -> JuniorSession:
+    """One owner session whose venue is this thread's last venue.
+
+    Sessions have no thread column. Membership is the shared venue, so a phone
+    session is on a phone thread and 404 on any other thread.
+    """
+    thread = thread_owned(db, user, thread_id)
+    row = session_owned(db, user, session_id)
+    if row.venue != thread.venue_last:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return row
+
+
+def update_thread_session(
+    db: Session,
+    user: User,
+    thread_id: UUID,
+    session_id: UUID,
+    *,
+    venue: str | None = None,
+    device_label: str | None = None,
+    set_device_label: bool = False,
+) -> JuniorSession:
+    thread_session_owned(db, user, thread_id, session_id)
+    return update_session(
+        db,
+        user,
+        session_id,
+        venue=venue,
+        device_label=device_label,
+        set_device_label=set_device_label,
+    )
+
+
 def update_thread(
     db: Session,
     user: User,
