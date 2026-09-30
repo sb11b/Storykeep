@@ -444,8 +444,15 @@ def pick_xhigh_for_auto(message: str, history: list[dict[str, str]] | None = Non
     text = (message or "").strip()
     if not text or is_small_talk_turn(text):
         return False
+    from app.services import cursor_agent_tool
     from app.services import junior_model
 
+    if (
+        cursor_agent_tool.diverged_ff_reply(text)
+        or cursor_agent_tool.local_merge_repair(text)
+        or cursor_agent_tool.wsl_switch_reply(text)
+    ):
+        return False
     if junior_model.is_cursor_task_turn(text):
         return True
     if junior_model.is_delegate_turn(text):

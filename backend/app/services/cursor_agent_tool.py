@@ -130,6 +130,28 @@ _BRANCH_SKIP = frozenset(
         "push",
         "merge",
         "fetch",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "behind",
+        "ahead",
+        "already",
+        "now",
+        "can",
+        "not",
+        "no",
+        "up",
+        "date",
+        "everything",
+        "fatal",
+        "hint",
+        "diverging",
+        "possible",
+        "aborting",
+        "missing",
     },
 )
 _NEGATED_START_RE = re.compile(
@@ -1815,8 +1837,37 @@ def wsl_switch_reply(message: str) -> str | None:
     return None
 
 
+_DIVERGED_FF_RE = re.compile(
+    r"not possible to fast-forward|can(?:'t|not) be fast-forwarded|diverging branches",
+    re.I,
+)
+
+DIVERGED_FF_REPLY = """Your local main already matches GitHub. The reset landed. Stop. Do not run more git commands.
+
+"There is no merge to abort" is fine. No merge was in progress.
+
+Leave cursor/next-step-in-sequence-b515 alone. That branch is one commit beside main, so a fast-forward cannot work. Do not merge that branch into main. Do not push. "Everything up-to-date" is the correct push result.
+
+Junior read the word "is" in "Your branch is behind" as a branch name. Ignore "Branch 'is' does not exist."
+"""
+
+
+def diverged_ff_reply(message: str) -> str | None:
+    """Git already finished. A fast-forward failure is not a Cloud Agent task."""
+    text = message or ""
+    if _DIVERGED_FF_RE.search(text):
+        return DIVERGED_FF_REPLY
+    if re.search(r"branch\s+['\"]is['\"]\s+does not exist", text, re.I) and re.search(
+        r"fast-forward|github/main|merge --ff-only|MERGE_HEAD missing",
+        text,
+        re.I,
+    ):
+        return DIVERGED_FF_REPLY
+    return None
+
+
 def local_merge_repair(message: str) -> str | None:
-    if wsl_switch_reply(message):
+    if wsl_switch_reply(message) or diverged_ff_reply(message):
         return None
     if _LOCAL_MERGE_RE.search(message or ""):
         return LOCAL_MERGE_REPLY
@@ -1825,7 +1876,7 @@ def local_merge_repair(message: str) -> str | None:
 
 def wants_start(message: str) -> bool:
     text = (message or "").strip()
-    if not text or wsl_switch_reply(text) or local_merge_repair(text):
+    if not text or wsl_switch_reply(text) or diverged_ff_reply(text) or local_merge_repair(text):
         return False
     if sequenced_task(text):
         return True
@@ -2073,8 +2124,13 @@ def start_agent(
         task = extract_prompt(source_message)
     if not task:
         return CursorAgentOutcome(False, "A non-empty prompt is required to start a Cloud Agent.", 400)
-    ref = (branch or extract_branch(source_message or "") if source_message else None) or _default_branch()
-    ref = ref.strip() or _default_branch()
+    blocked = diverged_ff_reply(source_message or "") or diverged_ff_reply(task)
+    if blocked:
+        return CursorAgentOutcome(False, blocked, 200)
+    chosen = (branch or "").strip()
+    if source_message and not _valid_branch_ref(chosen):
+        chosen = extract_branch(source_message)
+    ref = chosen if _valid_branch_ref(chosen) else _default_branch()
     repo_url = _repo_url()
     auto_pr = True if auto_create_pr is None else bool(auto_create_pr)
     if auto_pr and "Bugbot is off" not in task:

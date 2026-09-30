@@ -86,6 +86,49 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertIn("git reset --hard github/main", asked)
         self.assertFalse(cursor_agent_tool.wants_start("correct the error then give me a paste for ubantu"))
 
+    def test_fast_forward_paste_does_not_start_an_agent(self):
+        msg = (
+            "need fixing: steve@StevesSurface:~/Storykeep$ cd ~/Storykeep\n"
+            "git merge --abort\n"
+            "git remote add github https://github.com/sb11b/Storykeep-.git\n"
+            "git fetch github\n"
+            "git checkout main\n"
+            "git reset --hard github/main\n"
+            "git merge --ff-only github/cursor/next-step-in-sequence-b515\n"
+            "git push github main\n"
+            "fatal: There is no merge to abort (MERGE_HEAD missing).\n"
+            "Your branch is behind 'github/main' by 1 commit, and can be fast-forwarded.\n"
+            "HEAD is now at 78a56ce Turn off CodeRabbit's docstring coverage check.\n"
+            "hint: Diverging branches can't be fast-forwarded, you need to either:\n"
+            "fatal: Not possible to fast-forward, aborting.\n"
+            "Everything up-to-date\n"
+            "Cursor Cloud Agent create failed (HTTP 400): Branch 'is' does not exist "
+            "in repository sb11b/Storykeep-.\n"
+        )
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+        self.assertIsNone(cursor_agent_tool.local_merge_repair(msg))
+        reply = cursor_agent_tool.diverged_ff_reply(msg)
+        assert reply is not None
+        self.assertNotIn("git merge --abort", reply)
+        self.assertIn("Do not merge", reply)
+        self.assertIn("cursor/next-step-in-sequence-b515", reply)
+        self.assertIn("Do not push", reply)
+        self.assertIn("There is no merge to abort", reply)
+        self.assertEqual(cursor_agent_tool.extract_branch(msg), "main")
+        self.assertEqual(
+            cursor_agent_tool.extract_branch("Your branch is behind 'github/main' by 1 commit"),
+            "main",
+        )
+        from app.services import chat as chat_service
+        from app.services import junior_model
+
+        self.assertFalse(junior_model.brings_cursor_task(msg))
+        self.assertFalse(junior_model.is_cursor_task_turn(msg))
+        self.assertFalse(junior_model.should_server_start_agent(msg, configured=True))
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertIn("Fast turn", chat_service.pace_reason(msg, "low", "auto"))
+        self.assertNotIn("Cloud Agent", chat_service.pace_reason(msg, "low", "auto"))
+
     def test_powershell_wsl_paste_is_not_a_merge(self):
         msg = (
             "PS C:\\Users\\steve\\Storykeep> powershellwsl-dUbuntu\n"
@@ -605,6 +648,51 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertIn("senior-reviewer subagent", payload["prompt"]["text"])
         self.assertTrue(payload.get("autoCreatePR"))
         self.assertEqual(payload["repos"][0]["startingRef"], "main")
+
+    @patch("app.services.cursor_agent_tool.httpx.Client")
+    @patch("app.services.cursor_agent_tool.settings")
+    def test_branch_is_falls_back_to_main(self, mock_settings: MagicMock, mock_client_cls: MagicMock) -> None:
+        mock_settings.cursor_api_key = "key_test"
+        mock_settings.cursor_agent_repo = ""
+        mock_settings.github_repo = "sb11b/Storykeep-"
+        mock_settings.cursor_agent_branch = "main"
+        mock_settings.cursor_api_url = "https://api.cursor.com"
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "agent": {"id": "bc-1", "status": "ACTIVE", "url": "https://cursor.com/agents/bc-1"},
+            "run": {"id": "run-1", "status": "CREATING"},
+        }
+        mock_client = MagicMock()
+        mock_client.__enter__.return_value = mock_client
+        mock_client.request.return_value = response
+        mock_client_cls.return_value = mock_client
+        outcome = cursor_agent_tool.start_agent(
+            "Add a health check",
+            branch="is",
+            source_message="start a cursor agent on branch develop",
+        )
+        self.assertTrue(outcome.ok)
+        payload = mock_client.request.call_args.kwargs["json"]
+        self.assertEqual(payload["repos"][0]["startingRef"], "develop")
+
+    @patch("app.services.cursor_agent_tool.httpx.Client")
+    @patch("app.services.cursor_agent_tool.settings")
+    def test_fast_forward_paste_does_not_call_cursor(self, mock_settings: MagicMock, mock_client_cls: MagicMock) -> None:
+        mock_settings.cursor_api_key = "key_test"
+        mock_settings.cursor_agent_repo = ""
+        mock_settings.github_repo = "sb11b/Storykeep-"
+        mock_settings.cursor_agent_branch = "main"
+        mock_settings.cursor_api_url = "https://api.cursor.com"
+        msg = (
+            "fatal: Not possible to fast-forward, aborting.\n"
+            "Your branch is behind 'github/main' by 1 commit.\n"
+            "Branch 'is' does not exist in repository sb11b/Storykeep-.\n"
+        )
+        outcome = cursor_agent_tool.start_agent(msg, branch="is", source_message=msg)
+        self.assertFalse(outcome.ok)
+        self.assertIn("Do not merge", outcome.text)
+        mock_client_cls.assert_not_called()
 
     def test_push_workflow_mentions_cursor_branch(self):
         text = cursor_agent_tool.push_workflow_for_user(
