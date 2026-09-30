@@ -1524,6 +1524,61 @@ def continue_project_thread(
 
 
 @router.get(
+    "/projects/{slug}/threads/{thread_id}/memories",
+    response_model=list[JuniorSharedMemoryOut],
+)
+def list_project_thread_memories(
+    slug: str,
+    thread_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+    kind: str | None = Query(default=None, max_length=24),
+) -> list[JuniorSharedMemoryOut]:
+    """Memories sourced from one thread on this project. 404 if the thread is not on the project."""
+    rows, next_cursor = store.list_project_thread_memories_page(
+        db,
+        user,
+        slug,
+        thread_id,
+        kind=kind,
+        limit=limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorSharedMemoryOut.model_validate(row) for row in rows]
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/memories",
+    response_model=JuniorSharedMemoryOut,
+)
+def create_project_thread_memory(
+    slug: str,
+    thread_id: UUID,
+    payload: JuniorSharedMemoryIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedMemoryOut:
+    """Save a memory on this project thread. Replay stays on this route."""
+    row = store.create_project_thread_memory(
+        db,
+        user,
+        slug,
+        thread_id,
+        kind=payload.kind,
+        content=payload.content,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedMemoryOut.model_validate(row)
+
+
+@router.get(
     "/projects/{slug}/threads/{thread_id}/memories/{memory_id}",
     response_model=JuniorSharedMemoryOut,
 )

@@ -178,6 +178,10 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/projects/{slug}/threads/{id}/messages` | Save a message on that thread; replay stays on this route, not `POST /projects/{slug}/messages` or `POST /threads/{id}/messages` |
 | `GET` | `/api/v1/junior/projects/{slug}/threads/{id}/continue` | Continue history for that project thread (`limit`, `cursor` or `before_id`; 404 if the project or thread is missing) |
 | `POST` | `/api/v1/junior/projects/{slug}/threads/{id}/continue` | Resume that thread; replay stays on this route, not `POST /projects/{slug}/continue` or `POST /threads/{id}/continue` |
+| `GET` | `/api/v1/junior/projects/{slug}/threads/{id}/memories` | Memories sourced from that project thread (`limit`, `cursor` or `before_id`; 404 if the project or thread is missing) |
+| `POST` | `/api/v1/junior/projects/{slug}/threads/{id}/memories` | Save a memory on that thread; replay stays on this route, not `POST /projects/{slug}/memories` or `POST /threads/{id}/memories` |
+| `GET` | `/api/v1/junior/projects/{slug}/threads/{id}/memories/{id}` | One memory sourced from that project thread (404 if the project, thread, or memory is missing) |
+| `POST` | `/api/v1/junior/projects/{slug}/threads/{id}/memories/{id}` | Update that memory; replay stays on this route, not `POST /projects/{slug}/memories/{id}` or `POST /threads/{id}/memories/{id}` |
 | `GET` | `/api/v1/junior/agent-context?project=&q=` | Pack for a Cursor agent (project + thread + memories + search) |
 | `GET` | `/api/v1/junior/agent-context/{slug}` | One project context pack (`q` and `thread_id` optional) |
 | `POST` | `/api/v1/junior/agent-context/{slug}` | Pin query/thread on that pack (404 if the project is missing) |

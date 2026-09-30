@@ -64,7 +64,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-memory-get-v1"
+HEALTH_STAMP = "junior-client-project-thread-memories-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -154,6 +154,8 @@ def _is_project_agent_create_path(path: str) -> bool:
 
 def _is_thread_memory_create_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    if "/projects/" in cleaned:
+        return False
     return "/threads/" in cleaned and cleaned.endswith("/memories")
 
 
@@ -169,6 +171,11 @@ def _is_project_thread_memory_update_path(path: str) -> bool:
     return "/projects/" in cleaned and "/threads/" in cleaned and "/memories/" in cleaned
 
 
+def _is_project_thread_memory_create_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and "/threads/" in cleaned and cleaned.endswith("/memories")
+
+
 def _is_project_memory_update_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     if "/threads/" in cleaned:
@@ -178,6 +185,8 @@ def _is_project_memory_update_path(path: str) -> bool:
 
 def _is_project_memory_create_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
+    if "/threads/" in cleaned:
+        return False
     return "/projects/" in cleaned and cleaned.endswith("/memories")
 
 
@@ -532,6 +541,8 @@ class SharedMemoryClient:
             return "project_thread_continue"
         if _is_project_thread_memory_update_path(path):
             return "project_thread_memory_update"
+        if _is_project_thread_memory_create_path(path):
+            return "project_thread_memory"
         if _is_project_continue_path(path):
             return "project_continue"
         if _is_project_thread_message_update_path(path):
@@ -642,6 +653,13 @@ class SharedMemoryClient:
                 thread_id,
                 title=post.get("title"),
                 status=post.get("status"),
+            )
+        if kind == "project_thread_memory" and thread_id:
+            return self.create_project_thread_memory(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                thread_id,
+                str(post.get("content") or text),
+                kind=post.get("memory_kind") or post.get("fact_kind"),
             )
         if kind == "project_thread_memory_update" and thread_id:
             memory_id = post.get("memory_id") or post.get("id")
@@ -919,6 +937,8 @@ class SharedMemoryClient:
             kind = "project_thread_continue"
         elif _is_project_thread_memory_update_path(path):
             kind = "project_thread_memory_update"
+        elif _is_project_thread_memory_create_path(path):
+            kind = "project_thread_memory"
         elif _is_project_continue_path(path):
             kind = "project_continue"
         elif _is_project_thread_message_update_path(path):
@@ -1054,6 +1074,7 @@ class SharedMemoryClient:
                 "project_memory_update",
                 "project_memory",
                 "project_thread_memory_update",
+                "project_thread_memory",
             }
             else None,
             "source_thread": body.get("source_thread"),
@@ -1814,6 +1835,51 @@ class SharedMemoryClient:
             action="load this project thread continue",
             json={"venue": target_venue, "device_label": self.device_label},
             **extra,
+        )
+
+    def get_project_thread_memories(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        *,
+        kind: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id) or {}
+        if kind:
+            params["kind"] = kind
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/memories",
+            action="load these project thread memories",
+            **({"params": params} if params else {}),
+        )
+
+    def create_project_thread_memory(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        content: str,
+        *,
+        kind: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "slug": slug,
+            "project_slug": slug,
+            "thread_id": str(thread_id),
+            "content": content,
+        }
+        json_body: dict[str, Any] = {"content": content}
+        if kind:
+            body["kind"] = kind
+            json_body["kind"] = kind
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/memories",
+            action="save this project thread memory",
+            body=body,
+            json=json_body,
         )
 
     def get_project_thread_memory(self, slug: str, thread_id: UUID | str, memory_id: UUID | str) -> Any:

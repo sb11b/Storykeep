@@ -342,6 +342,14 @@ class JuniorSharedRouteTests(unittest.TestCase):
                 "POST",
                 f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/memories/{uuid.uuid4()}",
             ),
+            (
+                "GET",
+                f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/memories",
+            ),
+            (
+                "POST",
+                f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/memories",
+            ),
         ):
             response = client.request(
                 method,
@@ -1662,6 +1670,50 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertTrue(updated.call_args.kwargs["set_venue"])
         self.assertTrue(updated.call_args.kwargs["set_meta"])
 
+    def test_list_project_thread_memories_uses_thread_scope(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch(
+            "app.services.junior_shared_memory.list_memories_page",
+            return_value=([], None),
+        ) as listed:
+            rows, cursor = store.list_project_thread_memories_page(
+                object(), owner, "storykeep", thread_id, kind="note", limit=2
+            )
+        self.assertEqual(rows, [])
+        self.assertIsNone(cursor)
+        self.assertEqual(listed.call_args.kwargs["source_thread"], thread_id)
+        self.assertEqual(listed.call_args.kwargs["kind"], "note")
+        self.assertEqual(listed.call_args.kwargs["limit"], 2)
+
+    def test_create_project_thread_memory_uses_thread_scope(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        saved = SimpleNamespace(id=uuid.uuid4(), content="keep", source_thread=thread_id)
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch(
+            "app.services.junior_shared_memory.upsert_memory",
+            return_value=saved,
+        ) as created:
+            row = store.create_project_thread_memory(
+                object(),
+                owner,
+                "storykeep",
+                thread_id,
+                kind="note",
+                content="keep",
+            )
+        self.assertIs(row, saved)
+        self.assertIsNone(created.call_args.kwargs["memory_id"])
+        self.assertEqual(created.call_args.kwargs["source_thread"], thread_id)
+        self.assertEqual(created.call_args.kwargs["content"], "keep")
+        self.assertEqual(created.call_args.kwargs["kind"], "note")
+
     def test_project_thread_memory_owned_is_404_off_thread(self):
         owner = _owner()
         thread_id = uuid.uuid4()
@@ -1711,6 +1763,49 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(updated.call_args.kwargs["content"], "revised fact")
         self.assertTrue(updated.call_args.kwargs["set_kind"])
         self.assertTrue(updated.call_args.kwargs["set_source_thread"])
+
+    def test_project_thread_memories_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        fact = SimpleNamespace(
+            id=uuid.uuid4(),
+            kind="note",
+            content="Prefers short replies",
+            source_thread=thread_id,
+            created_at=now,
+            updated_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.list_project_thread_memories_page",
+            return_value=([fact], str(fact.id)),
+        ) as listed:
+            page = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/memories",
+                params={"limit": 1, "cursor": str(fact.id), "kind": "note"},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["content"], "Prefers short replies")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(fact.id))
+        self.assertEqual(listed.call_args.args[2], "storykeep")
+        self.assertEqual(listed.call_args.args[3], thread_id)
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+        self.assertEqual(listed.call_args.kwargs["kind"], "note")
+
+        with patch(
+            "app.routers.junior_shared.store.create_project_thread_memory",
+            return_value=fact,
+        ) as created:
+            saved = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/memories",
+                json={"content": "Prefers short replies", "kind": "note"},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["source_thread"], str(thread_id))
+        self.assertEqual(created.call_args.args[2], "storykeep")
+        self.assertEqual(created.call_args.args[3], thread_id)
+        self.assertEqual(created.call_args.kwargs["content"], "Prefers short replies")
+        self.assertEqual(created.call_args.kwargs["kind"], "note")
 
     def test_project_thread_memory_routes(self):
         now = datetime.now(timezone.utc)

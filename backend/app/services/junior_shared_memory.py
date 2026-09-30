@@ -1149,6 +1149,51 @@ def project_thread_memory_owned(
     return row
 
 
+def list_project_thread_memories_page(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    kind: str | None = None,
+    limit: int | None = PAGE_DEFAULT,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorMemoryFact], str | None]:
+    """Page memories sourced from this project thread. 404 if the thread is not on the project."""
+    project_thread_owned(db, user, slug, thread_id)
+    return list_memories_page(
+        db,
+        user,
+        kind=kind,
+        source_thread=thread_id,
+        limit=limit if limit is not None else PAGE_DEFAULT,
+        cursor=cursor,
+        before_id=before_id,
+    )
+
+
+def create_project_thread_memory(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    kind: str | None,
+    content: str,
+) -> JuniorMemoryFact:
+    """Save a memory on this project thread. 404 if the thread is not on the project."""
+    project_thread_owned(db, user, slug, thread_id)
+    return upsert_memory(
+        db,
+        user,
+        memory_id=None,
+        kind=kind,
+        content=content,
+        source_thread=thread_id,
+    )
+
+
 def update_project_thread_memory(
     db: Session,
     user: User,
