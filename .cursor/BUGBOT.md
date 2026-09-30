@@ -14,7 +14,7 @@ A high-severity finding is one that drops user text, exposes a private route, pr
 - Do not change the owner email (`angry.tune8751@fastmail.com`).
 - Do not print secrets, tokens, or `DATABASE_URL`.
 - The change opens a pull request into `main` and does not merge it. It does not push to `main`. It does not approve the pull request.
-- Bugbot, Security, and PR Routing & Approval are already enabled. Rollouts stays disabled. The diff does not enable Rollouts or automatic pull request approval.
+- Bugbot is off. Do not comment `bugbot run`. CodeRabbit reviews the pull request. Security and PR Routing & Approval stay enabled. Rollouts stays disabled. The diff does not enable Rollouts, Bugbot, or automatic pull request approval.
 - Do not merge steve-bitsko Cursor PR #2.
 - Tests cover the behavior that changed. A review fix that only restyles code is out of scope.
 

@@ -581,7 +581,9 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertEqual(outcome.agent_id, "bc-00000000-0000-0000-0000-000000000001")
         payload = mock_client.request.call_args.kwargs["json"]
         self.assertTrue(payload["prompt"]["text"].startswith("Add deploy polling tests"))
-        self.assertIn("Bugbot reviews that pull request automatically", payload["prompt"]["text"])
+        self.assertIn("CodeRabbit reviews that pull request", payload["prompt"]["text"])
+        self.assertIn("Bugbot is off", payload["prompt"]["text"])
+        self.assertIn("Do not comment bugbot run", payload["prompt"]["text"])
         self.assertIn("Security is already enabled", payload["prompt"]["text"])
         self.assertIn("PR Routing & Approval is already enabled", payload["prompt"]["text"])
         self.assertIn("Leave automatic approval off", payload["prompt"]["text"])
@@ -624,7 +626,7 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertIn("Auto PR", outcome.text)
         self.assertTrue(mock_client.request.call_args.kwargs["json"].get("autoCreatePR"))
         sent = mock_client.request.call_args.kwargs["json"]["prompt"]["text"]
-        self.assertIn("Bugbot reviews that pull request automatically", sent)
+        self.assertIn("Bugbot is off", sent)
 
     def test_bugbot_review_text_lists_commit_cost_and_findings(self) -> None:
         text = cursor_agent_tool.format_bugbot_reviews(

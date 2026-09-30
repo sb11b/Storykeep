@@ -142,7 +142,8 @@ _AUTO_PR_RE = re.compile(
 )
 _BUGBOT_PR_NOTE = (
     "\n\nWhen this run pushes a cursor/* branch, open a pull request into main. "
-    "Bugbot reviews that pull request automatically. "
+    "CodeRabbit reviews that pull request. Bugbot is off. "
+    "Do not comment bugbot run. Do not ask Steve to turn Bugbot on. "
     "Security is already enabled and reviews that same pull request. "
     "PR Routing & Approval is already enabled and may assign reviewers. "
     "Leave automatic approval off. Do not approve the pull request. "
@@ -2051,7 +2052,7 @@ def start_agent(
     ref = ref.strip() or _default_branch()
     repo_url = _repo_url()
     auto_pr = True if auto_create_pr is None else bool(auto_create_pr)
-    if auto_pr and "Bugbot reviews that pull request automatically" not in task:
+    if auto_pr and "Bugbot is off" not in task:
         task = task.rstrip() + _BUGBOT_PR_NOTE
     if "Before every git push, run the Security Review agent" not in task:
         task = task.rstrip() + _SECURITY_PUSH_NOTE

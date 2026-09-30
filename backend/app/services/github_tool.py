@@ -317,34 +317,8 @@ def _get(path: str) -> tuple[int, Any]:
     return response.status_code, body
 
 
-def _pull_number(payload: dict[str, Any] | None, url: str) -> int | None:
-    if isinstance(payload, dict) and payload.get("number") not in (None, ""):
-        try:
-            return int(payload["number"])
-        except (TypeError, ValueError):
-            pass
-    match = re.search(r"/pull/(\d+)", url or "")
-    if not match:
-        return None
-    return int(match.group(1))
-
-
-def _request_bugbot_run(payload: dict[str, Any] | None, url: str) -> None:
-    """Comment `bugbot run` once so Bugbot reviews the pull request."""
-    number = _pull_number(payload, url)
-    if number is None:
-        return
-    repo = _repo()
-    code, comments = _get(f"/repos/{repo}/issues/{number}/comments?per_page=30")
-    if code == 200 and isinstance(comments, list):
-        for item in comments:
-            if isinstance(item, dict) and str(item.get("body") or "").strip().lower() == "bugbot run":
-                return
-    _post(f"/repos/{repo}/issues/{number}/comments", {"body": "bugbot run"})
-
-
 def open_pull_request(*, head: str, base: str = "main", title: str, body: str = "") -> str | None:
-    """Open a PR so Bugbot can review a Junior Cloud Agent branch. None when it cannot."""
+    """Open a PR. CodeRabbit reviews it. Bugbot stays off. None when it cannot."""
     repo = _repo()
     owner = repo.split("/", 1)[0]
     head_name = (head or "").strip()
@@ -361,13 +335,12 @@ def open_pull_request(*, head: str, base: str = "main", title: str, body: str = 
             "title": (title or f"Junior: {head_name}")[:240],
             "head": head_name,
             "base": base_name,
-            "body": body or "Opened so Bugbot can review this branch.",
+            "body": body or "Opened for review. CodeRabbit reviews this pull request. Bugbot is off.",
         },
     )
     if status_code in (200, 201) and isinstance(payload, dict):
         url = str(payload.get("html_url") or "").strip()
         if url:
-            _request_bugbot_run(payload, url)
             return url
     code, existing = _get(
         f"/repos/{repo}/pulls?state=open&base={quote(base_name, safe='')}&head={quote(owner + ':' + head_name, safe='')}"
@@ -377,7 +350,6 @@ def open_pull_request(*, head: str, base: str = "main", title: str, body: str = 
             if isinstance(item, dict):
                 url = str(item.get("html_url") or "").strip()
                 if url:
-                    _request_bugbot_run(item, url)
                     return url
     logger.info("GitHub pull request was not opened for %s (HTTP %s)", head_name, status_code)
     return None

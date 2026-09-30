@@ -9,11 +9,13 @@ Repo: `github.com/sb11b/Storykeep-`. Production deploys from GitHub `main`.
 - Open a pull request into `main`. Do not merge it. Do not push to `main`.
 - Do not merge steve-bitsko Cursor PR #2.
 - Before every `git push`, review the diff with the senior-reviewer subagent in `.cursor/agents/senior-reviewer.md`. Wait for that review. Put the findings in the pull request body. Do not push when it reports a high-severity issue.
-- After the pull request is open, comment `bugbot run` so Bugbot reviews it.
+- After the pull request is open, leave it for CodeRabbit. Bugbot is off. Do not comment `bugbot run`.
 
-## Cursor automations already on
+## Cursor automations
 
-- Bugbot, Security, and PR Routing & Approval are enabled. Do not ask Steve to enable them again.
+- Bugbot is off. Do not ask Steve to turn it on. Do not comment `bugbot run`.
+- CodeRabbit reviews pull requests on this repo. The setup is Chill, comments only, no Slack, no summaries.
+- Security and PR Routing & Approval are enabled. Do not ask Steve to enable them again.
 - Security reviews the pull request. The scheduled Vulnerability Scanner stays off.
 - PR Routing & Approval may assign reviewers. Automatic approval stays off. Do not approve the pull request.
 - Rollouts stays disabled. Do not enable it and do not add deploy hooks for it.
