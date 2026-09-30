@@ -40,6 +40,7 @@ Failed project continues replay on POST /projects/{slug}/continue. GET /projects
 Failed project-thread opens replay on POST /projects/{slug}/threads. GET /projects/{slug}/threads pages threads on that project.
 Failed project-thread-message creates replay on POST /projects/{slug}/threads/{id}/messages. GET /projects/{slug}/threads/{id}/messages pages messages on that thread.
 Failed project-thread continues replay on POST /projects/{slug}/threads/{id}/continue. GET /projects/{slug}/threads/{id}/continue loads continue history for that thread.
+Failed project-thread search-hit updates replay on POST /projects/{slug}/threads/{id}/search/{id}. GET /projects/{slug}/threads/{id}/search/{id} loads one search hit on that thread.
 """
 
 from __future__ import annotations
@@ -64,7 +65,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-agents-page-v1"
+HEALTH_STAMP = "junior-client-project-thread-search-hit-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -257,6 +258,18 @@ def _project_thread_tail(path: str) -> str | None:
     return "/".join(parts[3:])
 
 
+def _is_project_thread_search_update_path(path: str) -> bool:
+    """True only for /projects/{slug}/threads/{thread_id}/search/{message_id}.
+
+    The slug may itself be the word search. Match the search segment after the thread id.
+    """
+    tail = _project_thread_tail(path)
+    if not tail or "/" not in tail:
+        return False
+    kind, _, message_id = tail.partition("/")
+    return kind == "search" and bool(message_id) and "/" not in message_id
+
+
 def _is_project_thread_agent_update_path(path: str) -> bool:
     """True only for /projects/{slug}/threads/{thread_id}/agents/{run_id}.
 
@@ -287,6 +300,8 @@ def _is_project_thread_update_path(path: str) -> bool:
         or cleaned.endswith("/memories")
         or (tail or "").startswith("agents/")
         or tail == "agents"
+        or (tail or "").startswith("search/")
+        or tail == "search"
     ):
         return False
     return "/projects/" in cleaned and "/threads/" in cleaned
@@ -337,7 +352,11 @@ def _is_agent_update_path(path: str) -> bool:
 
 
 def _is_thread_search_update_path(path: str) -> bool:
+    if _is_project_thread_search_update_path(path):
+        return False
     cleaned = (path or "").rstrip("/")
+    if "/projects/" in cleaned:
+        return False
     return "/threads/" in cleaned and "/search/" in cleaned
 
 
@@ -352,6 +371,8 @@ def _is_project_search_create_path(path: str) -> bool:
 
 
 def _is_project_search_update_path(path: str) -> bool:
+    if _is_project_thread_search_update_path(path):
+        return False
     cleaned = (path or "").rstrip("/")
     return "/projects/" in cleaned and "/search/" in cleaned
 
@@ -585,6 +606,8 @@ class SharedMemoryClient:
         if kind:
             return kind
         path = str(post.get("path") or "")
+        if _is_project_thread_search_update_path(path):
+            return "project_thread_search_update"
         if _is_project_thread_agent_update_path(path):
             return "project_thread_agent_update"
         if _is_project_thread_agent_create_path(path):
@@ -779,6 +802,16 @@ class SharedMemoryClient:
                 thread_id=thread_id,
                 q=post.get("q"),
             )
+        if kind == "project_thread_search_update" and thread_id:
+            message_id = post.get("message_id") or post.get("id")
+            if message_id:
+                return self.update_project_thread_search_hit(
+                    str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                    thread_id,
+                    message_id,
+                    snippet=post.get("snippet") or text or None,
+                    venue=post.get("search_venue") or post.get("hit_venue"),
+                )
         if kind == "project_thread_agent_update" and thread_id:
             run_id = post.get("id") or post.get("run_id")
             if run_id:
@@ -1005,7 +1038,9 @@ class SharedMemoryClient:
         self.last_user_error = exc.user_message
         if self._replaying:
             return
-        if _is_project_thread_agent_update_path(path):
+        if _is_project_thread_search_update_path(path):
+            kind = "project_thread_search_update"
+        elif _is_project_thread_agent_update_path(path):
             kind = "project_thread_agent_update"
         elif _is_project_thread_agent_create_path(path):
             kind = "project_thread_agent"
@@ -1106,6 +1141,7 @@ class SharedMemoryClient:
                     "thread_message_update",
                     "thread_search_update",
                     "project_search_update",
+                    "project_thread_search_update",
                     "project_message_update",
                     "project_thread_message_update",
                 }
@@ -2089,6 +2125,45 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/agents/{run_id}",
             action="update this project thread agent",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_thread_search_hit(
+        self, slug: str, thread_id: UUID | str, message_id: UUID | str
+    ) -> Any:
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/search/{message_id}",
+            action="load this project thread search hit",
+        )
+
+    def update_project_thread_search_hit(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        message_id: UUID | str,
+        *,
+        snippet: str | None = None,
+        venue: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "id": str(message_id),
+            "slug": slug,
+            "project_slug": slug,
+            "thread_id": str(thread_id),
+            "message_id": str(message_id),
+        }
+        json_body: dict[str, Any] = {}
+        if snippet is not None:
+            body["snippet"] = snippet
+            json_body["snippet"] = snippet
+        if venue is not None:
+            body["search_venue"] = venue
+            json_body["venue"] = venue
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/search/{message_id}",
+            action="update this project thread search hit",
             body=body,
             json=json_body,
         )

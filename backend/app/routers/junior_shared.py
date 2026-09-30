@@ -1736,6 +1736,53 @@ def update_project_thread_agent(
     return JuniorAgentRunOut.model_validate(row)
 
 
+@router.get(
+    "/projects/{slug}/threads/{thread_id}/search/{message_id}",
+    response_model=JuniorSharedSearchHitOut,
+)
+def get_project_thread_search_hit(
+    slug: str,
+    thread_id: UUID,
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedSearchHitOut:
+    """One search hit on a thread of this project. 404 if the hit is not on that thread."""
+    return JuniorSharedSearchHitOut.model_validate(
+        store.project_thread_search_hit_owned(db, user, slug, thread_id, message_id)
+    )
+
+
+@router.post(
+    "/projects/{slug}/threads/{thread_id}/search/{message_id}",
+    response_model=JuniorSharedSearchHitOut,
+)
+def update_project_thread_search_hit(
+    slug: str,
+    thread_id: UUID,
+    message_id: UUID,
+    payload: JuniorSharedSearchHitIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedSearchHitOut:
+    """Update a search hit on this project thread. Replay stays on this route."""
+    incoming = payload or JuniorSharedSearchHitIn()
+    fields = incoming.model_fields_set
+    hit = store.update_project_thread_search_hit(
+        db,
+        user,
+        slug,
+        thread_id,
+        message_id,
+        snippet=incoming.snippet if "snippet" in fields else None,
+        venue=incoming.venue if "venue" in fields else None,
+        set_snippet="snippet" in fields,
+        set_venue="venue" in fields,
+    )
+    db.commit()
+    return JuniorSharedSearchHitOut.model_validate(hit)
+
+
 @router.get("/projects/{slug}/threads/{thread_id}", response_model=JuniorSharedThreadOut)
 def get_project_thread(
     slug: str,

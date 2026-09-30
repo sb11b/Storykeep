@@ -2013,6 +2013,96 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(changed.call_args.kwargs["status_value"], "launched")
         self.assertTrue(changed.call_args.kwargs["set_status"])
 
+    def test_project_thread_search_hit_owned_is_404_off_thread(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        message_id = uuid.uuid4()
+        hit = {
+            "thread_id": uuid.uuid4(),
+            "message_id": message_id,
+            "snippet": "other thread",
+            "venue": "phone",
+            "rank": 0.0,
+        }
+        with patch(
+            "app.services.junior_shared_memory.project_thread_owned",
+            return_value=SimpleNamespace(id=thread_id),
+        ), patch("app.services.junior_shared_memory.search_hit_owned", return_value=hit):
+            with self.assertRaises(HTTPException) as caught:
+                store.project_thread_search_hit_owned(
+                    object(), owner, "storykeep", thread_id, message_id
+                )
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_update_project_thread_search_hit_uses_thread_scope(self):
+        owner = _owner()
+        thread_id = uuid.uuid4()
+        message_id = uuid.uuid4()
+        hit = {"thread_id": thread_id, "message_id": message_id, "snippet": "revised"}
+        with patch(
+            "app.services.junior_shared_memory.project_thread_search_hit_owned",
+            return_value=hit,
+        ), patch("app.services.junior_shared_memory.update_search_hit", return_value=hit) as updated:
+            store.update_project_thread_search_hit(
+                object(),
+                owner,
+                "storykeep",
+                thread_id,
+                message_id,
+                snippet="revised",
+                set_snippet=True,
+            )
+        self.assertEqual(updated.call_args.args[2], message_id)
+        self.assertEqual(updated.call_args.kwargs["snippet"], "revised")
+        self.assertTrue(updated.call_args.kwargs["set_snippet"])
+
+    def test_project_thread_search_hit_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        message_id = uuid.uuid4()
+        hit = {
+            "thread_id": thread_id,
+            "thread_title": "Notes",
+            "message_id": message_id,
+            "snippet": "pinned snippet",
+            "venue": "phone",
+            "created_at": now,
+            "rank": 0.0,
+        }
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.project_thread_search_hit_owned",
+            return_value=hit,
+        ) as loaded:
+            one = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/search/{message_id}"
+            )
+        self.assertEqual(one.status_code, 200)
+        self.assertEqual(one.json()["snippet"], "pinned snippet")
+        self.assertEqual(str(one.json()["thread_id"]), str(thread_id))
+        self.assertEqual(loaded.call_args.args[2], "storykeep")
+        self.assertEqual(loaded.call_args.args[3], thread_id)
+        self.assertEqual(loaded.call_args.args[4], message_id)
+
+        revised = {**hit, "snippet": "revised snippet", "venue": "windows"}
+        with patch(
+            "app.routers.junior_shared.store.update_project_thread_search_hit",
+            return_value=revised,
+        ) as changed:
+            posted = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/search/{message_id}",
+                json={"snippet": "revised snippet", "venue": "windows"},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["snippet"], "revised snippet")
+        self.assertEqual(changed.call_args.args[2], "storykeep")
+        self.assertEqual(changed.call_args.args[3], thread_id)
+        self.assertEqual(changed.call_args.args[4], message_id)
+        self.assertEqual(changed.call_args.kwargs["snippet"], "revised snippet")
+        self.assertEqual(changed.call_args.kwargs["venue"], "windows")
+        self.assertTrue(changed.call_args.kwargs["set_snippet"])
+        self.assertTrue(changed.call_args.kwargs["set_venue"])
+
     def test_project_thread_memories_routes(self):
         now = datetime.now(timezone.utc)
         thread_id = uuid.uuid4()

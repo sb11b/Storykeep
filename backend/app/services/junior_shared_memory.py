@@ -1933,6 +1933,41 @@ def project_thread_agent_owned(
     return row
 
 
+def project_thread_search_hit_owned(
+    db: Session, user: User, slug: str, thread_id: UUID, message_id: UUID
+) -> dict[str, Any]:
+    """One search hit on a thread that belongs to this project. 404 otherwise."""
+    project_thread_owned(db, user, slug, thread_id)
+    hit = search_hit_owned(db, user, message_id)
+    if hit["thread_id"] != thread_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search hit not found")
+    return hit
+
+
+def update_project_thread_search_hit(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    message_id: UUID,
+    *,
+    snippet: str | None = None,
+    venue: str | None = None,
+    set_snippet: bool = False,
+    set_venue: bool = False,
+) -> dict[str, Any]:
+    project_thread_search_hit_owned(db, user, slug, thread_id, message_id)
+    return update_search_hit(
+        db,
+        user,
+        message_id,
+        snippet=snippet,
+        venue=venue,
+        set_snippet=set_snippet,
+        set_venue=set_venue,
+    )
+
+
 def update_project_thread_agent(
     db: Session,
     user: User,

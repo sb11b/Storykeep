@@ -186,6 +186,8 @@ Owner boot seed (`angry.tune8751@fastmail.com`): projects `storykeep`, `junior-p
 | `POST` | `/api/v1/junior/projects/{slug}/threads/{id}/agents` | Record a launch on that thread (`context_ready`); replay stays on this route, not `POST /projects/{slug}/agents` or `POST /threads/{id}/agents`. Does not call Cursor |
 | `GET` | `/api/v1/junior/projects/{slug}/threads/{id}/agents/{id}` | One agent run on that project thread (404 if the project, thread, or run is missing) |
 | `POST` | `/api/v1/junior/projects/{slug}/threads/{id}/agents/{id}` | Update that run; replay stays on this route, not `POST /projects/{slug}/agents/{id}` or `POST /threads/{id}/agents/{id}` |
+| `GET` | `/api/v1/junior/projects/{slug}/threads/{id}/search/{id}` | One search hit on that project thread (404 if the project, thread, or hit is missing) |
+| `POST` | `/api/v1/junior/projects/{slug}/threads/{id}/search/{id}` | Update that hit; replay stays on this route, not `POST /projects/{slug}/search/{id}` or `POST /threads/{id}/search/{id}` |
 | `GET` | `/api/v1/junior/agent-context?project=&q=` | Pack for a Cursor agent (project + thread + memories + search) |
 | `GET` | `/api/v1/junior/agent-context/{slug}` | One project context pack (`q` and `thread_id` optional) |
 | `POST` | `/api/v1/junior/agent-context/{slug}` | Pin query/thread on that pack (404 if the project is missing) |
