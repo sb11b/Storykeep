@@ -61,7 +61,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-bugbot-pr-review-v1"
+HEALTH_STAMP = "junior-client-project-thread-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -139,6 +139,8 @@ def _is_project_update_path(path: str) -> bool:
         return False
     if cleaned.endswith("/continue"):
         return False
+    if "/threads/" in cleaned or cleaned.endswith("/threads"):
+        return False
     return "/projects/" in cleaned
 
 
@@ -196,6 +198,11 @@ def _is_project_message_create_path(path: str) -> bool:
 def _is_project_continue_path(path: str) -> bool:
     cleaned = (path or "").rstrip("/")
     return "/projects/" in cleaned and cleaned.endswith("/continue")
+
+
+def _is_project_thread_update_path(path: str) -> bool:
+    cleaned = (path or "").rstrip("/")
+    return "/projects/" in cleaned and "/threads/" in cleaned
 
 
 def _is_message_update_path(path: str) -> bool:
@@ -475,6 +482,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if _is_project_continue_path(path):
             return "project_continue"
+        if _is_project_thread_update_path(path):
+            return "project_thread_update"
         if "/continue" in path:
             return "continue"
         if _is_thread_context_update_path(path):
@@ -542,6 +551,13 @@ class SharedMemoryClient:
     def _replay_one(self, post: dict[str, Any], text: str) -> Any:
         kind = self._queued_kind(post)
         thread_id = post.get("thread_id")
+        if kind == "project_thread_update" and thread_id:
+            return self.update_project_thread(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                thread_id,
+                title=post.get("title"),
+                status=post.get("status"),
+            )
         if kind == "project_continue":
             return self.continue_project(
                 str(post.get("slug") or post.get("project_slug") or self.project_slug),
@@ -797,6 +813,8 @@ class SharedMemoryClient:
             return
         if _is_project_continue_path(path):
             kind = "project_continue"
+        elif _is_project_thread_update_path(path):
+            kind = "project_thread_update"
         elif "/continue" in path:
             kind = "continue"
         elif _is_thread_context_update_path(path):
@@ -1364,6 +1382,40 @@ class SharedMemoryClient:
             "post",
             f"{API_PREFIX}/projects/{slug}/memories/{memory_id}",
             action="update this project memory",
+            body=body,
+            json=json_body,
+        )
+
+    def get_project_thread(self, slug: str, thread_id: UUID | str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}",
+            action="load this project thread",
+        )
+
+    def update_project_thread(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        *,
+        title: str | None = None,
+        status: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {
+            "thread_id": str(thread_id),
+            "slug": slug,
+            "project_slug": slug,
+        }
+        json_body: dict[str, Any] = {}
+        if title is not None:
+            body["title"] = title
+            json_body["title"] = title
+        if status is not None:
+            body["status"] = status
+            json_body["status"] = status
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}",
+            action="update this project thread",
             body=body,
             json=json_body,
         )

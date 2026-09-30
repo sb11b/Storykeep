@@ -1282,6 +1282,38 @@ def continue_project(
     )
 
 
+@router.get("/projects/{slug}/threads/{thread_id}", response_model=JuniorSharedThreadOut)
+def get_project_thread(
+    slug: str,
+    thread_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedThreadOut:
+    return JuniorSharedThreadOut.model_validate(store.project_thread_owned(db, user, slug, thread_id))
+
+
+@router.post("/projects/{slug}/threads/{thread_id}", response_model=JuniorSharedThreadOut)
+def update_project_thread(
+    slug: str,
+    thread_id: UUID,
+    payload: JuniorSharedThreadIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorSharedThreadOut:
+    """Update a thread on this project. Replay stays on this route, not POST /threads/{id}."""
+    row = store.update_project_thread(
+        db,
+        user,
+        slug,
+        thread_id,
+        title=payload.title if "title" in payload.model_fields_set else None,
+        status_value=payload.status if "status" in payload.model_fields_set else None,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorSharedThreadOut.model_validate(row)
+
+
 @router.post("/projects/{slug}", response_model=JuniorProjectOut)
 def update_project(
     slug: str,

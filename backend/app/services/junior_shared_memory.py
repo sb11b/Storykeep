@@ -976,6 +976,34 @@ def list_project_messages_page(
     )
 
 
+def project_thread_owned(db: Session, user: User, slug: str, thread_id: UUID) -> JuniorThread:
+    project = get_project(db, user, slug)
+    row = thread_owned(db, user, thread_id)
+    thread_ids = set(project_search_thread_ids(db, user, project))
+    if row.id not in thread_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return row
+
+
+def update_project_thread(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    title: str | None = None,
+    status_value: str | None = None,
+) -> JuniorThread:
+    project_thread_owned(db, user, slug, thread_id)
+    return update_thread(
+        db,
+        user,
+        thread_id,
+        title=title,
+        status_value=status_value,
+    )
+
+
 def project_continue_thread(db: Session, user: User, slug: str) -> JuniorThread:
     """Pinned thread for this project: context thread, else the first agent-run thread."""
     project = get_project(db, user, slug)
