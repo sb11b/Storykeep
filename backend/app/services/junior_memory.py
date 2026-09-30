@@ -80,6 +80,31 @@ def save_markdown(db: Session, user: User, markdown: str) -> JuniorMemory:
     return row
 
 
+def append_markdown(db: Session, user: User, addition: str) -> JuniorMemory:
+    """Keep the stored note and add the new text after it.
+
+    A blank addition does not replace the note.
+    """
+    if not can_use_memory(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Demo accounts cannot use Junior memory.")
+    extra = (addition or "").replace("\x00", "").strip()
+    if not extra:
+        raise HTTPException(status_code=400, detail="Add some text to the note.")
+    row = get_row(db, user.id)
+    current = (row.markdown if row is not None else "") or ""
+    if not current:
+        combined = extra
+    elif current.endswith("\n\n"):
+        combined = current + extra
+    elif current.endswith("\n"):
+        combined = current + "\n" + extra
+    else:
+        combined = current + "\n\n" + extra
+    if not combined.startswith(current):
+        raise HTTPException(status_code=500, detail="Memory note append lost the original text.")
+    return save_markdown(db, user, combined)
+
+
 STALE_CURSOR_TASK_MARK = "polish his text into one copy-paste block"
 CURSOR_PROMPT_SECTION = """## Prompt for Cursor
 

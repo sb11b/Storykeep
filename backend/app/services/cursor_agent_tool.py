@@ -327,6 +327,29 @@ _NEXT_STEP_RE = re.compile(
     re.I,
 )
 
+SEQ_55_TASK = """Sequenced #55 — next after junior-client-project-sessions-page-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, or #54).
+
+Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #54 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main. CodeRabbit reviews it. Bugbot is off. Do not comment bugbot run. Do not merge that pull request.
+
+Already done on main:
+- Phone and Windows clients POST /projects/{slug}/sessions; failed heartbeats replay on that route
+- GET /projects/{slug}/sessions pages sessions whose venue matches a thread on that project
+- GET and PUT /memory already exist for the standing note
+- require_user; demo 403; no new public routes
+- Health stamp junior-client-project-sessions-page-v1
+
+Your job (#55):
+1. Both clients POST /memory to append text to the standing note. The original text stays. Failed writes stay on the FIFO and replay on that same route (not PUT /memory and not POST /memories). Same auth rule. No silent drop.
+2. Both clients call GET /memory (same auth). Still no public routes.
+3. Keep SQL idempotent; no DROP TABLE. No new public routes.
+4. Extend smoke tests for memory-note replay, memory-note GET, and 403. Keep existing tests green.
+5. Health stamp: junior-client-memory-note-get-v1
+6. Commit on a cursor/* branch and push that branch only.
+
+Return: branch name, commit SHA, files changed, Ubuntu merge commands for main.
+"""
+
+
 SEQ_54_TASK = """Sequenced #54 — next after junior-client-project-session-get-v1 on GitHub main (do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, or #53).
 
 Repo: github.com/sb11b/Storykeep- only. Branch from current GitHub main. #7 through #53 are already on main. Do not merge steve-bitsko Cursor PR #2. Do not change the owner email (angry.tune8751@fastmail.com). Do not git-push to main. Do not re-run SQL migrations. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request.
@@ -1600,9 +1623,9 @@ def _later_sequence_task(number: int, message: str) -> str:
     return (
         f"Sequenced #{number} on GitHub main of sb11b/Storykeep- (StoryKeep). "
         "Steve asked to start this sequence. Do not refuse. Do not ask him to define it. "
-        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, or #54. "
+        "Do not say there is no agent start tool. Do not redo #2, #3, #4, #5, #6, #7, #8, #9, #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #30, #31, #32, #33, #34, #35, #36, #37, #38, #39, #40, #41, #42, #43, #44, #45, #46, #47, #48, #49, #50, #51, #52, #53, #54, or #55. "
         "Do not merge steve-bitsko Cursor PR #2. Do not change the owner email. "
-        "Do not git-push to main. Do not re-run SQL. Open a pull request into main so Bugbot reviews it automatically. Do not merge that pull request. "
+        "Do not git-push to main. Do not re-run SQL. Open a pull request into main. CodeRabbit reviews it. Bugbot is off. Do not comment bugbot run. Do not merge that pull request. "
         "Commit on a cursor/* branch and push that branch only.\n\n"
         f"His request: {spoken}"
     )
@@ -1713,14 +1736,16 @@ def next_step_task(message: str) -> str | None:
         return SEQ_53_TASK
     if number == 54:
         return SEQ_54_TASK
-    if number is not None and number > 54:
+    if number == 55:
+        return SEQ_55_TASK
+    if number is not None and number > 55:
         return _later_sequence_task(number, text)
     if number == 2:
         return None
     for match in _NEXT_STEP_RE.finditer(text):
         if _negated_at(text, match.start()):
             continue
-        return _later_sequence_task(55, text)
+        return _later_sequence_task(56, text)
     return None
 
 
