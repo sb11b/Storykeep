@@ -150,6 +150,12 @@ _SECURITY_PUSH_NOTE = (
     "Wait until that review finishes. Put its findings in the pull request body. "
     "Do not push when the review reports a high-severity issue."
 )
+_SENIOR_REVIEW_NOTE = (
+    "\n\nBefore every git push, delegate the diff to the senior-reviewer subagent "
+    "in .cursor/agents/senior-reviewer.md. Wait until that review finishes. "
+    "Put its findings in the pull request body. "
+    "Do not push when that review reports a high-severity issue."
+)
 
 CURSOR_START_TOOL = {
     "type": "function",
@@ -1644,6 +1650,8 @@ def start_agent(
         task = task.rstrip() + _BUGBOT_PR_NOTE
     if "Before every git push, run the Security Review agent" not in task:
         task = task.rstrip() + _SECURITY_PUSH_NOTE
+    if "senior-reviewer subagent" not in task:
+        task = task.rstrip() + _SENIOR_REVIEW_NOTE
     payload: dict[str, Any] = {
         "prompt": {"text": task},
         "repos": [{"url": repo_url, "startingRef": ref}],

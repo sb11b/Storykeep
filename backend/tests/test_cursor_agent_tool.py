@@ -463,6 +463,7 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertTrue(payload["prompt"]["text"].startswith("Add deploy polling tests"))
         self.assertIn("Bugbot reviews that pull request automatically", payload["prompt"]["text"])
         self.assertIn("Before every git push, run the Security Review agent", payload["prompt"]["text"])
+        self.assertIn("senior-reviewer subagent", payload["prompt"]["text"])
         self.assertTrue(payload.get("autoCreatePR"))
         self.assertEqual(payload["repos"][0]["startingRef"], "main")
 

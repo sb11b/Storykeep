@@ -34,6 +34,29 @@ class GitHubToolTests(unittest.TestCase):
     def test_default_repo(self):
         self.assertEqual(github_tool._repo(), "sb11b/Storykeep-")
 
+    def test_open_pull_request_comments_bugbot_run(self):
+        created = {"html_url": "https://github.com/sb11b/Storykeep-/pull/12", "number": 12}
+        with (
+            patch.object(github_tool.settings, "github_token", "ghp_test"),
+            patch.object(github_tool, "_post", side_effect=[(201, created), (201, {"id": 1})]) as post,
+            patch.object(github_tool, "_get", return_value=(200, [])) as get,
+        ):
+            url = github_tool.open_pull_request(head="cursor/senior-review", title="Review")
+        self.assertEqual(url, "https://github.com/sb11b/Storykeep-/pull/12")
+        self.assertEqual(get.call_args.args[0], "/repos/sb11b/Storykeep-/issues/12/comments?per_page=30")
+        self.assertEqual(post.call_args_list[1].args[0], "/repos/sb11b/Storykeep-/issues/12/comments")
+        self.assertEqual(post.call_args_list[1].args[1], {"body": "bugbot run"})
+
+    def test_open_pull_request_does_not_repeat_bugbot_run(self):
+        created = {"html_url": "https://github.com/sb11b/Storykeep-/pull/12", "number": 12}
+        with (
+            patch.object(github_tool.settings, "github_token", "ghp_test"),
+            patch.object(github_tool, "_post", return_value=(201, created)) as post,
+            patch.object(github_tool, "_get", return_value=(200, [{"body": "bugbot run"}])),
+        ):
+            github_tool.open_pull_request(head="cursor/senior-review", title="Review")
+        self.assertEqual(post.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
