@@ -322,6 +322,55 @@ def update_project_thread_session(
     )
 
 
+def list_project_thread_sessions_page(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    limit: int | None = None,
+    cursor: UUID | str | None = None,
+    before_id: UUID | str | None = None,
+) -> tuple[list[JuniorSession], str | None]:
+    """Page sessions on this project thread. 404 if the thread is not on the project.
+
+    A session is on the thread when its venue matches the thread's last venue.
+    """
+    project_thread_owned(db, user, slug, thread_id)
+    return list_thread_sessions_page(
+        db,
+        user,
+        thread_id,
+        limit=PAGE_DEFAULT if limit is None else limit,
+        cursor=cursor,
+        before_id=before_id,
+    )
+
+
+def touch_project_thread_session(
+    db: Session,
+    user: User,
+    slug: str,
+    thread_id: UUID,
+    *,
+    venue: str | None = None,
+    device_label: str | None = None,
+) -> JuniorSession:
+    """Heartbeat a session on this project thread. Replay stays on the project-thread route.
+
+    404 when the project is missing, the thread is not on the project, or the
+    venue does not match the thread's last venue.
+    """
+    project_thread_owned(db, user, slug, thread_id)
+    return touch_thread_session(
+        db,
+        user,
+        thread_id,
+        venue=venue,
+        device_label=device_label,
+    )
+
+
 def update_thread(
     db: Session,
     user: User,

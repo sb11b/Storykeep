@@ -44,6 +44,7 @@ Failed project-thread search-hit updates replay on POST /projects/{slug}/threads
 Failed thread-session updates replay on POST /threads/{id}/sessions/{id}. GET /threads/{id}/sessions/{id} loads one session on that thread.
 Failed thread-session heartbeats replay on POST /threads/{id}/sessions. GET /threads/{id}/sessions pages sessions on that thread.
 Failed project-thread-session updates replay on POST /projects/{slug}/threads/{id}/sessions/{id}. GET /projects/{slug}/threads/{id}/sessions/{id} loads one session on that thread.
+Failed project-thread-session heartbeats replay on POST /projects/{slug}/threads/{id}/sessions. GET /projects/{slug}/threads/{id}/sessions pages sessions on that thread.
 """
 
 from __future__ import annotations
@@ -68,7 +69,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-session-get-v1"
+HEALTH_STAMP = "junior-client-project-thread-sessions-page-v1"
 
 
 class SharedMemoryError(Exception):
@@ -229,6 +230,16 @@ def _is_project_thread_session_update_path(path: str) -> bool:
         return False
     kind, _, session_id = tail.partition("/")
     return kind == "sessions" and bool(session_id) and "/" not in session_id
+
+
+def _is_project_thread_session_create_path(path: str) -> bool:
+    """True only for /projects/{slug}/threads/{thread_id}/sessions.
+
+    A slug of sessions is the project name, not this collection.
+    POST /threads/{id}/sessions is not this route.
+    POST /projects/{slug}/threads/{thread_id}/sessions/{id} is not this route.
+    """
+    return _project_thread_tail(path) == "sessions"
 
 
 def _is_thread_session_update_path(path: str) -> bool:
@@ -682,6 +693,8 @@ class SharedMemoryClient:
         path = str(post.get("path") or "")
         if _is_project_thread_session_update_path(path):
             return "project_thread_session_update"
+        if _is_project_thread_session_create_path(path):
+            return "project_thread_session"
         if _is_thread_session_update_path(path):
             return "thread_session_update"
         if _is_thread_session_create_path(path):
@@ -1095,6 +1108,13 @@ class SharedMemoryClient:
                     venue=post.get("session_venue"),
                     device_label=post.get("session_device_label"),
                 )
+        if kind == "project_thread_session" and thread_id:
+            return self.touch_project_thread_session(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                thread_id,
+                venue=post.get("session_venue"),
+                device_label=post.get("session_device_label") or post.get("device_label"),
+            )
         if kind == "thread_session_update" and thread_id:
             session_id = post.get("session_id") or post.get("id")
             if session_id:
@@ -1161,6 +1181,8 @@ class SharedMemoryClient:
             return
         if _is_project_thread_session_update_path(path):
             kind = "project_thread_session_update"
+        elif _is_project_thread_session_create_path(path):
+            kind = "project_thread_session"
         elif _is_thread_session_update_path(path):
             kind = "thread_session_update"
         elif _is_thread_session_create_path(path):
@@ -1331,10 +1353,22 @@ class SharedMemoryClient:
             "venue": self.venue,
             "device_label": body.get("device_label") or self.device_label,
             "session_venue": body.get("venue")
-            if kind in {"thread_session_update", "thread_session", "project_thread_session_update"}
+            if kind
+            in {
+                "thread_session_update",
+                "thread_session",
+                "project_thread_session_update",
+                "project_thread_session",
+            }
             else None,
             "session_device_label": body.get("device_label")
-            if kind in {"thread_session_update", "thread_session", "project_thread_session_update"}
+            if kind
+            in {
+                "thread_session_update",
+                "thread_session",
+                "project_thread_session_update",
+                "project_thread_session",
+            }
             else None,
             "action": exc.action,
             "user_message": exc.user_message,
@@ -2619,6 +2653,48 @@ class SharedMemoryClient:
         return self._read(
             f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/sessions/{session_id}",
             action="load this project thread session",
+        )
+
+    def get_project_thread_sessions(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        before_id: UUID | str | None = None,
+    ) -> Any:
+        params = self._page_params(limit=limit, cursor=cursor, before_id=before_id)
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/sessions",
+            action="load these project thread sessions",
+            **({"params": params} if params else {}),
+        )
+
+    def touch_project_thread_session(
+        self,
+        slug: str,
+        thread_id: UUID | str,
+        *,
+        venue: str | None = None,
+        device_label: str | None = None,
+    ) -> Any:
+        chosen_venue = self.venue if venue is None else venue
+        label = self.device_label if device_label is None else device_label
+        body: dict[str, Any] = {
+            "slug": slug,
+            "project_slug": slug,
+            "thread_id": str(thread_id),
+            "venue": chosen_venue,
+            "device_label": label,
+        }
+        json_body: dict[str, Any] = {"venue": chosen_venue, "device_label": label}
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/threads/{thread_id}/sessions",
+            action="record this project thread session",
+            body=body,
+            json=json_body,
         )
 
     def update_project_thread_session(

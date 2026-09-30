@@ -91,6 +91,7 @@ class JuniorSharedRouteTests(unittest.TestCase):
             f"/api/v1/junior/threads/{uuid.uuid4()}/sessions/{uuid.uuid4()}",
             f"/api/v1/junior/threads/{uuid.uuid4()}/sessions",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/sessions/{uuid.uuid4()}",
+            f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/sessions",
             f"/api/v1/junior/messages/{uuid.uuid4()}",
             f"/api/v1/junior/search/{uuid.uuid4()}",
             "/api/v1/junior/agent-context/storykeep",
@@ -162,6 +163,19 @@ class JuniorSharedRouteTests(unittest.TestCase):
             client.post(
                 f"/api/v1/junior/projects/storykeep/threads/{thread_for_session}/sessions/{session_for_thread}",
                 json={"device_label": "junior-mobile-2"},
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            client.get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_for_session}/sessions"
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            client.post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_for_session}/sessions",
+                json={"venue": "phone", "device_label": "junior-mobile"},
             ).status_code,
             401,
         )
@@ -367,6 +381,8 @@ class JuniorSharedRouteTests(unittest.TestCase):
             ("POST", f"/api/v1/junior/threads/{uuid.uuid4()}/sessions"),
             ("GET", f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/sessions/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/sessions/{uuid.uuid4()}"),
+            ("GET", f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/sessions"),
+            ("POST", f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/sessions"),
             ("POST", f"/api/v1/junior/messages/{uuid.uuid4()}"),
             ("POST", f"/api/v1/junior/agents/{uuid.uuid4()}"),
             ("POST", "/api/v1/junior/messages"),
@@ -2700,6 +2716,97 @@ class JuniorSharedServiceTests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200)
         self.assertEqual(saved.json()["device_label"], "junior-mobile")
         self.assertEqual(touched.call_args.args[2], thread_id)
+        self.assertEqual(touched.call_args.kwargs["venue"], "phone")
+        self.assertEqual(touched.call_args.kwargs["device_label"], "junior-mobile")
+
+    def test_project_thread_sessions_page_uses_project_thread(self):
+        owner = _owner()
+        thread = SimpleNamespace(id=uuid.uuid4(), venue_last="phone")
+        db = MagicMock()
+        with patch.object(store, "project_thread_owned", return_value=thread), patch.object(
+            store, "list_thread_sessions_page", return_value=([], None)
+        ) as listed:
+            rows, cursor = store.list_project_thread_sessions_page(
+                db, owner, "storykeep", thread.id, limit=2, cursor="abc"
+            )
+        self.assertEqual(rows, [])
+        self.assertIsNone(cursor)
+        self.assertEqual(listed.call_args.args[2], thread.id)
+        self.assertEqual(listed.call_args.kwargs["limit"], 2)
+
+        with patch.object(
+            store,
+            "project_thread_owned",
+            side_effect=HTTPException(status_code=404, detail="Thread not found"),
+        ):
+            with self.assertRaises(HTTPException) as missing:
+                store.list_project_thread_sessions_page(db, owner, "storykeep", thread.id)
+        self.assertEqual(missing.exception.status_code, 404)
+
+    def test_touch_project_thread_session_requires_project_thread(self):
+        owner = _owner()
+        thread = SimpleNamespace(id=uuid.uuid4(), venue_last="phone")
+        row = SimpleNamespace(id=uuid.uuid4())
+        with patch.object(store, "project_thread_owned", return_value=thread), patch.object(
+            store, "touch_thread_session", return_value=row
+        ) as touched:
+            got = store.touch_project_thread_session(
+                MagicMock(), owner, "storykeep", thread.id, venue="phone", device_label="junior-mobile"
+            )
+        self.assertIs(got, row)
+        self.assertEqual(touched.call_args.args[2], thread.id)
+        self.assertEqual(touched.call_args.kwargs["venue"], "phone")
+
+        with patch.object(
+            store,
+            "project_thread_owned",
+            side_effect=HTTPException(status_code=404, detail="Thread not found"),
+        ), patch.object(store, "touch_thread_session") as touched:
+            with self.assertRaises(HTTPException) as missing:
+                store.touch_project_thread_session(
+                    MagicMock(), owner, "missing", thread.id, venue="phone"
+                )
+        self.assertEqual(missing.exception.status_code, 404)
+        touched.assert_not_called()
+
+    def test_project_thread_sessions_page_routes(self):
+        now = datetime.now(timezone.utc)
+        thread_id = uuid.uuid4()
+        session = SimpleNamespace(
+            id=uuid.uuid4(),
+            venue="phone",
+            device_label="junior-mobile",
+            last_seen_at=now,
+            created_at=now,
+        )
+        app = _app()
+        with patch(
+            "app.routers.junior_shared.store.list_project_thread_sessions_page",
+            return_value=([session], str(session.id)),
+        ) as listed:
+            page = TestClient(app).get(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/sessions",
+                params={"limit": 1, "cursor": str(session.id)},
+            )
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.json()[0]["venue"], "phone")
+        self.assertEqual(page.headers.get("x-next-cursor"), str(session.id))
+        self.assertEqual(listed.call_args.args[2], "storykeep")
+        self.assertEqual(listed.call_args.args[3], thread_id)
+        self.assertEqual(listed.call_args.kwargs["limit"], 1)
+
+        with patch(
+            "app.routers.junior_shared.store.touch_project_thread_session",
+            return_value=session,
+        ) as touched:
+            saved = TestClient(app).post(
+                f"/api/v1/junior/projects/storykeep/threads/{thread_id}/sessions",
+                json={"venue": "phone", "device_label": "junior-mobile"},
+            )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["device_label"], "junior-mobile")
+        self.assertEqual(touched.call_args.args[2], "storykeep")
+        self.assertEqual(touched.call_args.args[3], thread_id)
         self.assertEqual(touched.call_args.kwargs["venue"], "phone")
         self.assertEqual(touched.call_args.kwargs["device_label"], "junior-mobile")
 
