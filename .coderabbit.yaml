@@ -1,5 +1,6 @@
 # Quiet CodeRabbit setup for sb11b/Storykeep-.
 # Reviews pull requests into main. No Slack, no summaries, no poems, no auto-approve.
+# Docstring coverage is off. This repo does not use an 80% docstring gate.
 language: en-US
 early_access: false
 reviews:
@@ -33,6 +34,9 @@ reviews:
         Adding to a note keeps the original text. /api/v1/junior stays behind require_user. Demo gets 403.
         No DROP TABLE. Do not change the owner email. Do not print secrets or DATABASE_URL.
         Do not merge the pull request. Bugbot is off. Do not comment "bugbot run".
+  pre_merge_checks:
+    docstrings:
+      mode: off
   auto_review:
     enabled: true
     drafts: false
