@@ -12,8 +12,8 @@ class HealthAndLoggedOutShellTests(unittest.TestCase):
         self.assertTrue(body["build"])
         self.assertIn("built_at", body)
         self.assertIn(body["cursor_delegate"], {"configured", "missing"})
-        self.assertEqual(body["junior_clients"], "junior-x-search-422-v1")
-        self.assertEqual(body["build"], "junior-x-search-422-v1")
+        self.assertEqual(body["junior_clients"], "junior-reply-spacing-v1")
+        self.assertEqual(body["build"], "junior-reply-spacing-v1")
 
     def test_health_includes_last_rss_fetch_counts(self):
         from app.services import rss as rss_service

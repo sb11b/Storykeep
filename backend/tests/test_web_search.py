@@ -62,6 +62,8 @@ class WebSearchClientTests(unittest.TestCase):
             )
         )
         self.assertNotIn("<|eos|>", web_search.strip_stop_tokens("listings.<|eos|>"))
+        self.assertEqual(web_search.strip_stop_tokens(" from "), " from ")
+        self.assertEqual(web_search.strip_stop_tokens(" X"), " X")
         full = "Yankees at Red Sox, 7:05 p.m. ET on ESPN. Dodgers at Padres, 10:10 p.m. ET on MLB Network."
         self.assertFalse(web_search.reply_is_schedule_stub(full))
 

@@ -193,11 +193,12 @@ def search_query_for(message: str, history: list | None = None) -> str:
 
 
 def strip_stop_tokens(text: str) -> str:
-    return _STOP_TOKEN_RE.sub("", text or "").strip()
+    """Drop stop tokens only. Keep spaces — each chat delta is one piece, and a leading space is the word break."""
+    return _STOP_TOKEN_RE.sub("", text or "")
 
 
 def reply_is_schedule_stub(text: str) -> bool:
-    cleaned = strip_stop_tokens(text or "")
+    cleaned = strip_stop_tokens(text or "").strip()
     if not cleaned:
         return True
     if _CLOCK_RE.search(cleaned) and len(cleaned.split()) > 8:
