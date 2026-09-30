@@ -14,4 +14,6 @@ Fix these when they show up:
 
 Junior Cloud Agent runs open a pull request into `main` so this review runs. Do not merge steve-bitsko Cursor PR #2.
 
+Before every git push, the Cloud Agent runs a Security Review of that diff and waits for it to finish. A high-severity finding blocks the push. The findings go in the pull request body.
+
 The repo is `github.com/sb11b/Storykeep-`. Production deploys from GitHub `main`.

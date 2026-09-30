@@ -446,6 +446,7 @@ class CursorAgentToolTests(unittest.TestCase):
         payload = mock_client.request.call_args.kwargs["json"]
         self.assertTrue(payload["prompt"]["text"].startswith("Add deploy polling tests"))
         self.assertIn("Bugbot reviews that pull request automatically", payload["prompt"]["text"])
+        self.assertIn("Before every git push, run the Security Review agent", payload["prompt"]["text"])
         self.assertTrue(payload.get("autoCreatePR"))
         self.assertEqual(payload["repos"][0]["startingRef"], "main")
 

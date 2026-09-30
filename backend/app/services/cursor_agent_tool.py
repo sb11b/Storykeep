@@ -145,6 +145,11 @@ _BUGBOT_PR_NOTE = (
     "Bugbot reviews that pull request automatically. Do not merge the pull request. "
     "Do not push to main."
 )
+_SECURITY_PUSH_NOTE = (
+    "\n\nBefore every git push, run the Security Review agent on the diff you are about to push. "
+    "Wait until that review finishes. Put its findings in the pull request body. "
+    "Do not push when the review reports a high-severity issue."
+)
 
 CURSOR_START_TOOL = {
     "type": "function",
@@ -1585,6 +1590,8 @@ def start_agent(
     auto_pr = True if auto_create_pr is None else bool(auto_create_pr)
     if auto_pr and "Bugbot reviews that pull request automatically" not in task:
         task = task.rstrip() + _BUGBOT_PR_NOTE
+    if "Before every git push, run the Security Review agent" not in task:
+        task = task.rstrip() + _SECURITY_PUSH_NOTE
     payload: dict[str, Any] = {
         "prompt": {"text": task},
         "repos": [{"url": repo_url, "startingRef": ref}],
