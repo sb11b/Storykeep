@@ -1514,6 +1514,14 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertNotIn(("POST", "/api/v1/junior/projects/storykeep/memories"), replay_http.calls)
         self.assertFalse(path.exists())
 
+    def test_project_memory_note_get_404(self):
+        http = _ScriptedHttp([404, 404, 404])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _phone(http).get_project_memory_note("storykeep")
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertIn("did not load this project memory note", ctx.exception.user_message)
+
     def test_project_thread_memory_note_get_403_and_append_replays(self):
         thread_id = uuid.uuid4()
         http = _ScriptedHttp([200, 403, 403, 403])
