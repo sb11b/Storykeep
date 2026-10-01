@@ -1970,6 +1970,14 @@ def local_merge_repair(message: str) -> str | None:
     return None
 
 
+
+def is_cursor_start_negated(message: str) -> bool:
+    text = (message or "").strip()
+    if not text:
+        return False
+    return bool(_NEGATED_CURSOR_RE.search(text) or _OPERATOR_RULES_RE.search(text))
+
+
 def wants_start(message: str) -> bool:
     text = (message or "").strip()
     if not text or wsl_switch_reply(text) or diverged_ff_reply(text) or local_merge_repair(text):
