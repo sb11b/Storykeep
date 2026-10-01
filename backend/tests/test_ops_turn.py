@@ -37,5 +37,19 @@ class OpsTurnTests(unittest.TestCase):
         self.assertIn("Storykeep web", joined)
 
 
+    def test_pick_xhigh_for_auto_false_when_asks_for_cursor_prompt(self):
+        from app.services import chat as chat_service
+        msg = "Write me a Cursor prompt to fix the login bug on Railway."
+        self.assertTrue(junior_model.asks_for_cursor_prompt(msg))
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
+
+    def test_pick_xhigh_for_auto_false_when_do_not_start_cursor(self):
+        from app.services import chat as chat_service
+        msg = "Do not start Cursor Agent. Just give me a prompt for the Railway deploy."
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
+
+
 if __name__ == "__main__":
     unittest.main()

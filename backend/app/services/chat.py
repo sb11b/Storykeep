@@ -453,6 +453,8 @@ def pick_xhigh_for_auto(message: str, history: list[dict[str, str]] | None = Non
         or cursor_agent_tool.wsl_switch_reply(text)
     ):
         return False
+    if junior_model.asks_for_cursor_prompt(text):
+        return False
     if junior_model.is_cursor_task_turn(text):
         return True
     if junior_model.is_delegate_turn(text):
