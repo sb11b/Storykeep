@@ -181,12 +181,29 @@ def is_android_project_turn(message: str) -> bool:
     return bool(_ANDROID_PROJECT_RE.search(message or ""))
 
 
+_CLINE_OPERATOR_RE = re.compile(
+    r"\bCline\s+(?:pending|operator)\b|"
+    r"\bApprove\s+or\s+Deny\b",
+    re.I,
+)
+
+
+def is_cline_operator_message(message: str) -> bool:
+    """Cline operator status messages are not GitHub/Railway ops or delegate turns."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    return bool(_CLINE_OPERATOR_RE.search(text))
+
+
 def is_ops_turn(message: str) -> bool:
     from app.services import github_tool
     from app.services import railway_tool
 
     text = (message or "").strip()
     if not text:
+        return False
+    if is_cline_operator_message(text):
         return False
     return railway_tool.wants_railway(text) or github_tool.wants_github(text)
 
@@ -196,6 +213,8 @@ def is_delegate_turn(message: str) -> bool:
 
     text = (message or "").strip()
     if not text:
+        return False
+    if is_cline_operator_message(text):
         return False
     if not cursor_agent_tool.configured():
         return False
