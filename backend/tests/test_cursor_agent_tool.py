@@ -879,6 +879,63 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertFalse(outcome.ok)
         self.assertIn("CURSOR_API_KEY", outcome.text)
 
+    def test_wants_start_false_when_key_missing_no_start_tool(self):
+        # When CURSOR_API_KEY is missing, wants_start should still work for explicit
+        # phrases (the missing-key check happens in start_agent), but the chat
+        # routing should not attach the tool.
+        self.assertTrue(cursor_agent_tool.wants_start("Start a cursor agent to fix login"))
+
+    def test_wants_start_negated_start_phrases(self):
+        for msg in (
+            "do not start a cursor agent for this",
+            "don't start a cursor agent for this",
+            "dont start a cursor agent for this",
+            "never start a cloud agent for this",
+            "Do not start cursor for this task",
+            "Don't start cursor for this task",
+            "Never start cursor for this task",
+        ):
+            self.assertFalse(cursor_agent_tool.wants_start(msg), msg)
+
+    def test_wants_start_operator_rules_paste(self):
+        for msg in (
+            "Cline operator rules: do not start Cursor agents",
+            "Here are the Cline operator rules note",
+            "do not start Cursor, even when asked",
+            "never start Cursor from this chat",
+        ):
+            self.assertFalse(cursor_agent_tool.wants_start(msg), msg)
+
+    def test_wants_start_ignores_negated_start_anywhere_in_message(self):
+        # Even if "start a cursor agent" appears later in the message, a
+        # negation earlier should block it.
+        msg = (
+            "Steve pasted: do not start a cursor agent. "
+            "Later in the same message: start a cursor agent to fix login"
+        )
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
+    def test_wants_start_operator_rules_blocks_later_start(self):
+        msg = (
+            "Cline operator rules. Do not start Cursor agents. "
+            "Start a cursor agent to fix the login bug."
+        )
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
+    @patch("app.services.cursor_agent_tool.settings")
+    def test_is_delegate_turn_false_when_cursor_not_configured(self, mock_settings: MagicMock) -> None:
+        mock_settings.cursor_api_key = ""
+        msg = "Start a cursor agent to fix the login bug"
+        self.assertFalse(junior_model.is_delegate_turn(msg))
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
+    @patch("app.services.cursor_agent_tool.settings")
+    def test_is_delegate_turn_true_when_cursor_configured(self, mock_settings: MagicMock) -> None:
+        mock_settings.cursor_api_key = "test_key"
+        msg = "Start a cursor agent to fix the login bug"
+        self.assertTrue(junior_model.is_delegate_turn(msg))
+        self.assertTrue(cursor_agent_tool.wants_start(msg))
+
 
 if __name__ == "__main__":
     unittest.main()

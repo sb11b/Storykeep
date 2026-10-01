@@ -197,6 +197,8 @@ def is_delegate_turn(message: str) -> bool:
     text = (message or "").strip()
     if not text:
         return False
+    if not cursor_agent_tool.configured():
+        return False
     return cursor_agent_tool.wants_start(text)
 
 

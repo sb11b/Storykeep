@@ -158,6 +158,27 @@ _NEGATED_START_RE = re.compile(
     r"(?:do\s+not|don't|dont|never|not)\s+$",
     re.I,
 )
+# Broader negation that appears anywhere in the message (not just before a start match).
+_NEGATED_CURSOR_RE = re.compile(
+    r"\b(?:"
+    r"do\s+not\s+start\s+(?:a\s+)?(?:cursor|cloud)\s+agent|"
+    r"don\'t\s+start\s+(?:a\s+)?(?:cursor|cloud)\s+agent|"
+    r"dont\s+start\s+(?:a\s+)?(?:cursor|cloud)\s+agent|"
+    r"never\s+start\s+(?:a\s+)?(?:cursor|cloud)\s+agent|"
+    r"do\s+not\s+start\s+cursor|"
+    r"don\'t\s+start\s+cursor|"
+    r"dont\s+start\s+cursor|"
+    r"never\s+start\s+cursor"
+    r")\b",
+    re.I,
+)
+# Cline operator-rules paste — contains instructions to not start agents.
+_OPERATOR_RULES_RE = re.compile(
+    r"\bCline\s+operator\s+rules\b|"
+    r"\bdo\s+not\s+start\s+Cursor\b|"
+    r"\bnever\s+start\s+Cursor\b",
+    re.I,
+)
 _AUTO_PR_RE = re.compile(
     r"\b(?:auto[\s-]?create\s+pr|open\s+a\s+pr|open\s+a\s+pull\s+request|create\s+(?:a\s+)?pull\s+request)\b",
     re.I,
@@ -1952,6 +1973,10 @@ def local_merge_repair(message: str) -> str | None:
 def wants_start(message: str) -> bool:
     text = (message or "").strip()
     if not text or wsl_switch_reply(text) or diverged_ff_reply(text) or local_merge_repair(text):
+        return False
+    if _NEGATED_CURSOR_RE.search(text):
+        return False
+    if _OPERATOR_RULES_RE.search(text):
         return False
     if sequenced_task(text):
         return True

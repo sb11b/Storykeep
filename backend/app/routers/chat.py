@@ -1303,7 +1303,7 @@ def _chat(
     )
     cursor_tools = (
         cursor_agent_tool.CURSOR_TOOLS
-        if cursor_tools_on and (delegate_turn or not junior_model.is_cursor_task_turn(user_text))
+        if cursor_enabled and cursor_tools_on and (delegate_turn or not junior_model.is_cursor_task_turn(user_text))
         else None
     )
     tools = (
