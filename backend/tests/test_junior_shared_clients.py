@@ -1522,6 +1522,29 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 404)
         self.assertIn("did not load this project memory note", ctx.exception.user_message)
 
+    def test_project_memory_note_hits_client_project_slug(self):
+        http = _ScriptedHttp([200])
+        loaded = _phone(http).get_project_memory_note("junior-phone")
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(http.calls[0], ("GET", "/api/v1/junior/projects/junior-phone/memory"))
+
+        http2 = _ScriptedHttp([200])
+        loaded2 = _windows(http2).get_project_memory_note("windows-overlay")
+        self.assertEqual(loaded2.status_code, 200)
+        self.assertEqual(http2.calls[0], ("GET", "/api/v1/junior/projects/windows-overlay/memory"))
+
+        http3 = _ScriptedHttp([200])
+        appended = _phone(http3).append_project_memory_note("junior-phone", "phone note")
+        self.assertEqual(appended.status_code, 200)
+        self.assertEqual(http3.calls[0], ("POST", "/api/v1/junior/projects/junior-phone/memory"))
+        self.assertEqual(http3.json_bodies[0], {"text": "phone note"})
+
+        http4 = _ScriptedHttp([200])
+        appended2 = _windows(http4).append_project_memory_note("windows-overlay", "windows note")
+        self.assertEqual(appended2.status_code, 200)
+        self.assertEqual(http4.calls[0], ("POST", "/api/v1/junior/projects/windows-overlay/memory"))
+        self.assertEqual(http4.json_bodies[0], {"text": "windows note"})
+
     def test_project_thread_memory_note_get_403_and_append_replays(self):
         thread_id = uuid.uuid4()
         http = _ScriptedHttp([200, 403, 403, 403])
