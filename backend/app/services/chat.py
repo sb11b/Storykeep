@@ -447,7 +447,11 @@ _CLINE_RESULT_RE = re.compile(r"\bcline\s+(?:returned|result|output|said)\b|\bre
 
 def _is_cursor_start_explicit(text: str) -> bool:
     """True only when Steve explicitly says to start the Cursor agent."""
+    from app.services import cursor_agent_tool
+
     lowered = (text or "").strip().lower()
+    if cursor_agent_tool.is_cursor_start_negated(lowered):
+        return False
     return bool(
         re.search(r"\b(?:start|launch|open|spawn)\s+(?:a\s+)?(?:cursor\s+)?(?:cloud\s+)?agent\b", lowered)
         or re.search(r"\bgo\s+ahead\s+and\s+(?:start|send)\b", lowered)

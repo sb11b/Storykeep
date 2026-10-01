@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from app.services import junior_model, railway_tool
+from app.services import cursor_agent_tool, junior_model, railway_tool
 
 
 class OpsTurnTests(unittest.TestCase):

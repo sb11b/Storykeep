@@ -2013,6 +2013,8 @@ def wants_start(message: str) -> bool:
         or _WRITE_CLINE_PROMPT_ONLY_RE.search(text)
         or _FILE_PATH_ONLY_RE.search(text)
         or _CLINE_RESULT_ONLY_RE.search(text)):
+        if is_cursor_start_negated(text):
+            return False
         return _is_cursor_start_explicit(text)
     for match in _START_RE.finditer(text):
         prefix = text[max(0, match.start() - 32) : match.start()]
