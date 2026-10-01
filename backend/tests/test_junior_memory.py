@@ -236,6 +236,83 @@ class JuniorThreadMemoryNoteRouterTests(unittest.TestCase):
         self.assertEqual(got.status_code, 403)
 
 
+class JuniorProjectMemoryNoteRouterTests(unittest.TestCase):
+    def _client(self, db, user) -> TestClient:
+        app = FastAPI()
+        app.include_router(shared_router.router, prefix="/api/v1")
+
+        def fake_db():
+            yield db
+
+        app.dependency_overrides[get_db] = fake_db
+        app.dependency_overrides[get_current_user] = lambda: user
+        return TestClient(app)
+
+    def test_missing_project_is_404_and_does_not_append(self):
+        owner = SimpleNamespace(id=uuid.uuid4(), email="stevebitsko@duck.com", is_demo_locked=False)
+        note = SimpleNamespace(markdown="Keep this.", updated_at=None)
+        db = MagicMock()
+        db.get.return_value = note
+        client = self._client(db, owner)
+        missing = HTTPException(status_code=404, detail="Project not found")
+        with patch(
+            "app.routers.junior_shared.store.get_project",
+            side_effect=missing,
+        ):
+            got = client.get("/api/v1/junior/projects/storykeep/memory")
+            self.assertEqual(got.status_code, 404)
+            posted = client.post(
+                "/api/v1/junior/projects/storykeep/memory",
+                json={"text": "nope"},
+            )
+        self.assertEqual(posted.status_code, 404)
+        self.assertEqual(note.markdown, "Keep this.")
+        db.commit.assert_not_called()
+
+    def test_post_appends_when_project_exists(self):
+        owner_id = uuid.uuid4()
+        owner = SimpleNamespace(id=owner_id, email="stevebitsko@duck.com", is_demo_locked=False)
+        project = SimpleNamespace(slug="storykeep", user_id=owner_id)
+        note = SimpleNamespace(markdown="Keep this.", updated_at=None)
+        db = MagicMock()
+        db.get.return_value = note
+        client = self._client(db, owner)
+        with patch(
+            "app.routers.junior_shared.store.get_project",
+            return_value=project,
+        ) as owned:
+            got = client.get("/api/v1/junior/projects/storykeep/memory")
+            self.assertEqual(got.status_code, 200)
+            self.assertEqual(got.json()["markdown"], "Keep this.")
+            blank = client.post(
+                "/api/v1/junior/projects/storykeep/memory",
+                json={"text": "   "},
+            )
+            self.assertEqual(blank.status_code, 400)
+            self.assertEqual(note.markdown, "Keep this.")
+            posted = client.post(
+                "/api/v1/junior/projects/storykeep/memory",
+                json={"text": "Added line"},
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.json()["markdown"], "Keep this.\n\nAdded line")
+        self.assertTrue(posted.json()["markdown"].startswith("Keep this."))
+        self.assertEqual(owned.call_args.args[2], "storykeep")
+        db.commit.assert_called()
+
+    def test_demo_get_and_post_are_403(self):
+        demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
+        client = self._client(MagicMock(), demo)
+        posted = client.post(
+            "/api/v1/junior/projects/storykeep/memory",
+            json={"text": "leaked"},
+        )
+        self.assertEqual(posted.status_code, 403)
+        self.assertNotIn("leaked", posted.text)
+        got = client.get("/api/v1/junior/projects/storykeep/memory")
+        self.assertEqual(got.status_code, 403)
+
+
 class JuniorProjectThreadMemoryNoteRouterTests(unittest.TestCase):
     def _client(self, db, user) -> TestClient:
         app = FastAPI()
@@ -313,77 +390,6 @@ class JuniorProjectThreadMemoryNoteRouterTests(unittest.TestCase):
         self.assertEqual(posted.status_code, 403)
         self.assertNotIn("leaked", posted.text)
         got = client.get(f"/api/v1/junior/projects/storykeep/threads/{thread_id}/memory")
-        self.assertEqual(got.status_code, 403)
-
-
-class JuniorProjectMemoryNoteRouterTests(unittest.TestCase):
-    def _client(self, db, user) -> TestClient:
-        app = FastAPI()
-        app.include_router(shared_router.router, prefix="/api/v1")
-
-        def fake_db():
-            yield db
-
-        app.dependency_overrides[get_db] = fake_db
-        app.dependency_overrides[get_current_user] = lambda: user
-        return TestClient(app)
-
-    def test_missing_project_is_404_and_does_not_append(self):
-        owner = SimpleNamespace(id=uuid.uuid4(), email="stevebitsko@duck.com", is_demo_locked=False)
-        note = SimpleNamespace(markdown="Keep this.", updated_at=None)
-        db = MagicMock()
-        db.get.return_value = note
-        client = self._client(db, owner)
-        missing = HTTPException(status_code=404, detail="Project not found")
-        with patch("app.routers.junior_shared.store.get_project", side_effect=missing):
-            got = client.get("/api/v1/junior/projects/missing/memory")
-            self.assertEqual(got.status_code, 404)
-            posted = client.post(
-                "/api/v1/junior/projects/missing/memory",
-                json={"text": "nope"},
-            )
-        self.assertEqual(posted.status_code, 404)
-        self.assertEqual(note.markdown, "Keep this.")
-        db.commit.assert_not_called()
-
-    def test_post_appends_when_project_exists(self):
-        owner_id = uuid.uuid4()
-        owner = SimpleNamespace(id=owner_id, email="stevebitsko@duck.com", is_demo_locked=False)
-        project = SimpleNamespace(slug="storykeep", user_id=owner_id)
-        note = SimpleNamespace(markdown="Keep this.", updated_at=None)
-        db = MagicMock()
-        db.get.return_value = note
-        client = self._client(db, owner)
-        with patch("app.routers.junior_shared.store.get_project", return_value=project) as owned:
-            got = client.get("/api/v1/junior/projects/storykeep/memory")
-            self.assertEqual(got.status_code, 200)
-            self.assertEqual(got.json()["markdown"], "Keep this.")
-            blank = client.post(
-                "/api/v1/junior/projects/storykeep/memory",
-                json={"text": "   "},
-            )
-            self.assertEqual(blank.status_code, 400)
-            self.assertEqual(note.markdown, "Keep this.")
-            posted = client.post(
-                "/api/v1/junior/projects/storykeep/memory",
-                json={"text": "Added line"},
-            )
-        self.assertEqual(posted.status_code, 200)
-        self.assertEqual(posted.json()["markdown"], "Keep this.\n\nAdded line")
-        self.assertTrue(posted.json()["markdown"].startswith("Keep this."))
-        self.assertEqual(owned.call_args.args[2], "storykeep")
-        db.commit.assert_called()
-
-    def test_demo_get_and_post_are_403(self):
-        demo = SimpleNamespace(id=uuid.uuid4(), email="steve@storykeep.local", is_demo_locked=True)
-        client = self._client(MagicMock(), demo)
-        posted = client.post(
-            "/api/v1/junior/projects/storykeep/memory",
-            json={"text": "leaked"},
-        )
-        self.assertEqual(posted.status_code, 403)
-        self.assertNotIn("leaked", posted.text)
-        got = client.get("/api/v1/junior/projects/storykeep/memory")
         self.assertEqual(got.status_code, 403)
 
 

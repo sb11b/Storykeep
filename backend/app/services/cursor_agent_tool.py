@@ -361,8 +361,8 @@ Already done on main:
 - Health stamp junior-client-project-thread-memory-note-get-v1
 
 Your job (#58):
-1. Both clients POST /projects/{slug}/memory to append text to the standing note for that project. The original text stays. Failed writes stay on the FIFO and replay on that same route (not POST /memory, not PUT /memory, not POST /memories, not POST /threads/{id}/memory, and not POST /projects/{slug}/threads/{thread_id}/memory). Same auth rule. No silent drop. 404 if the project is missing.
-2. Both clients call GET /projects/{slug}/memory (same auth). 404 in that same case. Still no public routes.
+1. Both clients POST /projects/{slug}/memory to append text to the standing note for that project. The original text stays. Failed writes stay on the FIFO and replay on that same route (not POST /memory, not PUT /memory, not POST /memories, not POST /threads/{id}/memory, not POST /projects/{slug}/threads/{thread_id}/memory, and not POST /projects/{slug}/memories). Same auth rule. No silent drop. 404 if the project is missing.
+2. Both clients call GET /projects/{slug}/memory (same auth). 404 if the project is missing. Still no public routes.
 3. Keep SQL idempotent; no DROP TABLE. No new public routes.
 4. Extend smoke tests for project memory-note replay, project memory-note GET, and 403. Keep existing tests green.
 5. Health stamp: junior-client-project-memory-note-get-v1

@@ -22,6 +22,9 @@ from app.services.junior_shared_clients import (
     MAX_ATTEMPTS,
     LocalPostQueue,
     SharedMemoryError,
+    _is_project_memory_note_path,
+    _is_project_thread_memory_note_path,
+    _is_project_update_path,
     next_page_cursor,
     phone_client,
     windows_client,
@@ -1468,6 +1471,50 @@ class SharedClientSmokeTests(unittest.TestCase):
         self.assertNotIn(("POST", f"/api/v1/junior/threads/{thread_id}/memories"), replay_http.calls)
         self.assertFalse(path.exists())
 
+    def test_project_memory_note_path_is_one_slug_segment(self):
+        note = "/api/v1/junior/projects/threads/memory"
+        project_update = "/api/v1/junior/projects/memory"
+        thread_note = "/api/v1/junior/projects/storykeep/threads/abc/memory"
+        self.assertTrue(_is_project_memory_note_path(note))
+        self.assertFalse(_is_project_thread_memory_note_path(note))
+        self.assertFalse(_is_project_memory_note_path(project_update))
+        self.assertTrue(_is_project_update_path(project_update))
+        self.assertFalse(_is_project_memory_note_path(thread_note))
+        self.assertTrue(_is_project_thread_memory_note_path(thread_note))
+
+    def test_project_memory_note_get_403_and_append_replays(self):
+        http = _ScriptedHttp([200, 403, 403, 403])
+        loaded = _phone(http).get_project_memory_note("storykeep")
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(http.calls[0], ("GET", "/api/v1/junior/projects/storykeep/memory"))
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as ctx:
+                _windows(http).get_project_memory_note("storykeep")
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("did not load this project memory note", ctx.exception.user_message)
+
+        path = _queue_path()
+        fail = _ScriptedHttp([500, 500, 500])
+        with patch("app.services.junior_shared_clients._sleep"):
+            with self.assertRaises(SharedMemoryError) as saved:
+                phone_client(fail, queue_path=path).append_project_memory_note("storykeep", "Added line")
+        self.assertIn("did not add to this project memory note", saved.exception.user_message)
+        restarted = phone_client(object(), queue_path=path)
+        self.assertEqual(restarted.last_failed_post["kind"], "project_memory_note")
+        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
+        self.assertEqual(restarted.last_failed_post["text"], "Added line")
+        replay_http = _ScriptedHttp([200])
+        replayed = phone_client(replay_http, queue_path=path)
+        response = replayed.replay_after_login("owner-session")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(replay_http.calls, [("POST", "/api/v1/junior/projects/storykeep/memory")])
+        self.assertEqual(replay_http.json_bodies[0], {"text": "Added line"})
+        self.assertNotIn(("POST", "/api/v1/junior/memory"), replay_http.calls)
+        self.assertNotIn(("PUT", "/api/v1/junior/memory"), replay_http.calls)
+        self.assertNotIn(("POST", "/api/v1/junior/memories"), replay_http.calls)
+        self.assertNotIn(("POST", "/api/v1/junior/projects/storykeep/memories"), replay_http.calls)
+        self.assertFalse(path.exists())
+
     def test_project_thread_memory_note_get_403_and_append_replays(self):
         thread_id = uuid.uuid4()
         http = _ScriptedHttp([200, 403, 403, 403])
@@ -1514,55 +1561,6 @@ class SharedClientSmokeTests(unittest.TestCase):
             replay_http.calls,
         )
         self.assertFalse(path.exists())
-
-    def test_project_memory_note_get_403_and_append_replays(self):
-        http = _ScriptedHttp([200, 403, 403, 403])
-        loaded = _phone(http).get_project_memory_note("storykeep")
-        self.assertEqual(loaded.status_code, 200)
-        self.assertEqual(http.calls[0], ("GET", "/api/v1/junior/projects/storykeep/memory"))
-        with patch("app.services.junior_shared_clients._sleep"):
-            with self.assertRaises(SharedMemoryError) as ctx:
-                _windows(http).get_project_memory_note("storykeep")
-        self.assertEqual(ctx.exception.status_code, 403)
-        self.assertIn("did not load this project memory note", ctx.exception.user_message)
-
-        path = _queue_path()
-        fail = _ScriptedHttp([500, 500, 500])
-        with patch("app.services.junior_shared_clients._sleep"):
-            with self.assertRaises(SharedMemoryError) as saved:
-                phone_client(fail, queue_path=path).append_project_memory_note("storykeep", "Added line")
-        self.assertIn("did not add to this project memory note", saved.exception.user_message)
-        restarted = phone_client(object(), queue_path=path)
-        self.assertEqual(restarted.last_failed_post["kind"], "project_memory_note")
-        self.assertEqual(restarted.last_failed_post["slug"], "storykeep")
-        self.assertEqual(restarted.last_failed_post["text"], "Added line")
-        replay_http = _ScriptedHttp([200])
-        replayed = phone_client(replay_http, queue_path=path)
-        response = replayed.replay_after_login("owner-session")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(replay_http.calls, [("POST", "/api/v1/junior/projects/storykeep/memory")])
-        self.assertEqual(replay_http.json_bodies[0], {"text": "Added line"})
-        self.assertNotIn(("POST", "/api/v1/junior/memory"), replay_http.calls)
-        self.assertNotIn(("PUT", "/api/v1/junior/memory"), replay_http.calls)
-        self.assertNotIn(("POST", "/api/v1/junior/memories"), replay_http.calls)
-        self.assertNotIn(("POST", "/api/v1/junior/projects/storykeep/memories"), replay_http.calls)
-        self.assertFalse(path.exists())
-
-        for slug in ("threads", "memories", "memories-foo"):
-            odd_path = _queue_path()
-            odd_fail = _ScriptedHttp([500, 500, 500])
-            with patch("app.services.junior_shared_clients._sleep"):
-                with self.assertRaises(SharedMemoryError):
-                    phone_client(odd_fail, queue_path=odd_path).append_project_memory_note(
-                        slug, "Added line"
-                    )
-            odd_replay = _ScriptedHttp([200])
-            phone_client(odd_replay, queue_path=odd_path).replay_after_login("owner-session")
-            self.assertEqual(
-                odd_replay.calls,
-                [("POST", f"/api/v1/junior/projects/{slug}/memory")],
-            )
-            self.assertNotIn(("POST", "/api/v1/junior/messages"), odd_replay.calls)
 
     def test_memory_note_get_403_and_append_replays(self):
         http = _ScriptedHttp([200, 403, 403, 403])

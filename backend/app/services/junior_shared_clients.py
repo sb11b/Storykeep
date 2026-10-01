@@ -150,8 +150,6 @@ def _is_project_update_path(path: str) -> bool:
         return False
     if "/memories/" in cleaned or cleaned.endswith("/memories"):
         return False
-    if cleaned.endswith("/memory"):
-        return False
     if "/messages/" in cleaned or cleaned.endswith("/messages"):
         return False
     if cleaned.endswith("/continue"):
@@ -218,27 +216,27 @@ def _is_memory_update_path(path: str) -> bool:
 def _is_project_memory_note_path(path: str) -> bool:
     """True only for /projects/{slug}/memory.
 
-    The slug is one segment. A thread path and /memories stay on their own routes.
-    A slug such as threads or memories-foo still matches this route.
+    The slug is one path segment. /projects/memory is a project update.
+    /projects/{slug}/threads/{id}/memory is the project-thread note.
     """
     cleaned = (path or "").split("?", 1)[0].rstrip("/")
     marker = "/projects/"
-    start = cleaned.find(marker)
-    if start < 0:
+    index = cleaned.find(marker)
+    if index < 0:
         return False
-    rest = cleaned[start + len(marker) :]
-    if rest.count("/") != 1:
-        return False
-    slug, tail = rest.split("/", 1)
-    return bool(slug) and tail == "memory"
+    parts = [part for part in cleaned[index + len(marker) :].split("/") if part]
+    return len(parts) == 2 and parts[1] == "memory"
 
 
 def _is_project_thread_memory_note_path(path: str) -> bool:
     """True only for /projects/{slug}/threads/{thread_id}/memory, not /memories."""
-    cleaned = (path or "").rstrip("/")
-    if "/memories" in cleaned:
+    cleaned = (path or "").split("?", 1)[0].rstrip("/")
+    marker = "/projects/"
+    index = cleaned.find(marker)
+    if index < 0:
         return False
-    return "/projects/" in cleaned and "/threads/" in cleaned and cleaned.endswith("/memory")
+    parts = [part for part in cleaned[index + len(marker) :].split("/") if part]
+    return len(parts) == 4 and parts[1] == "threads" and parts[3] == "memory"
 
 
 def _is_thread_memory_note_path(path: str) -> bool:
@@ -1113,11 +1111,6 @@ class SharedMemoryClient:
                     kind=post.get("memory_kind") or post.get("fact_kind"),
                     source_thread=post.get("source_thread"),
                 )
-        if kind == "project_memory_note":
-            return self.append_project_memory_note(
-                str(post.get("slug") or post.get("project_slug") or self.project_slug),
-                str(post.get("text") or post.get("content") or text),
-            )
         if kind == "project_memory":
             return self.create_project_memory(
                 str(post.get("slug") or post.get("project_slug") or self.project_slug),
@@ -1165,6 +1158,11 @@ class SharedMemoryClient:
                     venue=post.get("venue"),
                     meta=post.get("meta") if isinstance(post.get("meta"), dict) else None,
                 )
+        if kind == "project_memory_note":
+            return self.append_project_memory_note(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                str(post.get("text") or post.get("content") or text),
+            )
         if kind == "project_thread_memory_note" and thread_id:
             return self.append_project_thread_memory_note(
                 str(post.get("slug") or post.get("project_slug") or self.project_slug),
