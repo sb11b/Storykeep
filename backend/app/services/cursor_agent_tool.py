@@ -2483,7 +2483,7 @@ def bugbot_section(pr_url: str | None, *, repo_slug: str | None = None) -> tuple
     """Chat block and whether waiting should stop. Empty text means the review is not ready."""
     number = pr_number_from_url(pr_url)
     if number is None:
-        return "Review analytics\n\nNo pull request yet, so there is no Bugbot review to show.", True
+        return "", True
     reviews, _error = fetch_bugbot_reviews(number, repo_slug=repo_slug)
     if not reviews:
         from app.services import github_tool
