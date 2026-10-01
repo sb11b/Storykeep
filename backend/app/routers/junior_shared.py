@@ -297,6 +297,31 @@ def post_turn(
     return _turn_out(thread.id, user_row, junior_row, reply_status)
 
 
+@router.get("/projects/{slug}/memory")
+def get_project_memory_note(
+    slug: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> dict:
+    """Standing note when this project belongs to the user. 404 if the project is missing."""
+    store.get_project(db, user, slug)
+    return _standing_note_payload(standing_note.get_row(db, user.id))
+
+
+@router.post("/projects/{slug}/memory")
+def append_project_memory_note(
+    slug: str,
+    payload: JuniorThreadMemoryNoteIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> dict:
+    """Append to the standing note for this project. The original text stays."""
+    store.get_project(db, user, slug)
+    row = standing_note.append_markdown(db, user, payload.text)
+    db.commit()
+    return _standing_note_payload(row)
+
+
 @router.get("/projects/{slug}/threads/{thread_id}/memory")
 def get_project_thread_memory_note(
     slug: str,

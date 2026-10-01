@@ -48,6 +48,7 @@ Failed project-thread-session heartbeats replay on POST /projects/{slug}/threads
 Failed memory-note appends replay on POST /memory. GET /memory loads the standing note. The original text stays.
 Failed thread memory-note appends replay on POST /threads/{id}/memory. GET /threads/{id}/memory loads that same note when the thread exists. The original text stays.
 Failed project-thread memory-note appends replay on POST /projects/{slug}/threads/{id}/memory. GET /projects/{slug}/threads/{id}/memory loads that same note when the thread is on the project. The original text stays.
+Failed project memory-note appends replay on POST /projects/{slug}/memory. GET /projects/{slug}/memory loads that same note when the project exists. The original text stays.
 """
 
 from __future__ import annotations
@@ -72,7 +73,7 @@ MAX_ATTEMPTS = 3
 BACKOFF_SECONDS = (0.2, 0.5)
 
 QUEUE_DIRNAME = ".storykeep"
-HEALTH_STAMP = "junior-client-project-thread-memory-note-get-v1"
+HEALTH_STAMP = "junior-client-project-memory-note-get-v1"
 
 
 class SharedMemoryError(Exception):
@@ -149,6 +150,8 @@ def _is_project_update_path(path: str) -> bool:
         return False
     if "/memories/" in cleaned or cleaned.endswith("/memories"):
         return False
+    if cleaned.endswith("/memory"):
+        return False
     if "/messages/" in cleaned or cleaned.endswith("/messages"):
         return False
     if cleaned.endswith("/continue"):
@@ -210,6 +213,24 @@ def _is_memory_update_path(path: str) -> bool:
     if "/threads/" in cleaned or "/projects/" in cleaned:
         return False
     return "/memories/" in cleaned
+
+
+def _is_project_memory_note_path(path: str) -> bool:
+    """True only for /projects/{slug}/memory.
+
+    The slug is one segment. A thread path and /memories stay on their own routes.
+    A slug such as threads or memories-foo still matches this route.
+    """
+    cleaned = (path or "").split("?", 1)[0].rstrip("/")
+    marker = "/projects/"
+    start = cleaned.find(marker)
+    if start < 0:
+        return False
+    rest = cleaned[start + len(marker) :]
+    if rest.count("/") != 1:
+        return False
+    slug, tail = rest.split("/", 1)
+    return bool(slug) and tail == "memory"
 
 
 def _is_project_thread_memory_note_path(path: str) -> bool:
@@ -776,6 +797,8 @@ class SharedMemoryClient:
             return "project_thread_agent"
         if _is_project_thread_continue_path(path):
             return "project_thread_continue"
+        if _is_project_memory_note_path(path):
+            return "project_memory_note"
         if _is_project_thread_memory_note_path(path):
             return "project_thread_memory_note"
         if _is_project_thread_memory_update_path(path):
@@ -1090,6 +1113,11 @@ class SharedMemoryClient:
                     kind=post.get("memory_kind") or post.get("fact_kind"),
                     source_thread=post.get("source_thread"),
                 )
+        if kind == "project_memory_note":
+            return self.append_project_memory_note(
+                str(post.get("slug") or post.get("project_slug") or self.project_slug),
+                str(post.get("text") or post.get("content") or text),
+            )
         if kind == "project_memory":
             return self.create_project_memory(
                 str(post.get("slug") or post.get("project_slug") or self.project_slug),
@@ -1302,6 +1330,8 @@ class SharedMemoryClient:
             kind = "project_thread_agent"
         elif _is_project_thread_continue_path(path):
             kind = "project_thread_continue"
+        elif _is_project_memory_note_path(path):
+            kind = "project_memory_note"
         elif _is_project_thread_memory_note_path(path):
             kind = "project_thread_memory_note"
         elif _is_project_thread_memory_update_path(path):
@@ -3039,6 +3069,26 @@ class SharedMemoryClient:
             action="update this message",
             body=body,
             json={key: value for key, value in body.items() if key != "id"},
+        )
+
+    def get_project_memory_note(self, slug: str) -> Any:
+        return self._read(
+            f"{API_PREFIX}/projects/{slug}/memory",
+            action="load this project memory note",
+        )
+
+    def append_project_memory_note(self, slug: str, text: str) -> Any:
+        body = {
+            "text": text,
+            "slug": slug,
+            "project_slug": slug,
+        }
+        return self._write(
+            "post",
+            f"{API_PREFIX}/projects/{slug}/memory",
+            action="add to this project memory note",
+            body=body,
+            json={"text": text},
         )
 
     def get_project_thread_memory_note(self, slug: str, thread_id: UUID | str) -> Any:

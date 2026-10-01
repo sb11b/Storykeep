@@ -94,6 +94,7 @@ class JuniorSharedLockdownTests(unittest.TestCase):
             f"/api/v1/junior/threads/{uuid.uuid4()}/continue",
             f"/api/v1/junior/threads/{uuid.uuid4()}/memory",
             f"/api/v1/junior/projects/storykeep/threads/{uuid.uuid4()}/memory",
+            "/api/v1/junior/projects/storykeep/memory",
             f"/api/v1/junior/threads/{uuid.uuid4()}/memories",
             "/api/v1/junior/projects/storykeep/agents",
             f"/api/v1/junior/projects/storykeep/agents/{uuid.uuid4()}",
