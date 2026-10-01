@@ -1978,6 +1978,23 @@ def is_cursor_start_negated(message: str) -> bool:
     return bool(_NEGATED_CURSOR_RE.search(text) or _OPERATOR_RULES_RE.search(text))
 
 
+# Patterns for #68 — these should NOT trigger wants_start unless Steve explicitly says to start.
+_SEQ_NUMBER_ONLY_RE = re.compile(r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*\d+\b", re.I)
+_WRITE_CLINE_PROMPT_ONLY_RE = re.compile(r"\bwrite\s+a\s+cline\s+prompt\b", re.I)
+_FILE_PATH_ONLY_RE = re.compile(r"\b[\w/\\.-]+\.(?:py|tsx?|ts|js|md|sql)\b", re.I)
+_CLINE_RESULT_ONLY_RE = re.compile(r"\bcline\s+(?:returned|result|output|said)\b|\bresult\s+from\s+cline\b", re.I)
+
+
+def _is_cursor_start_explicit(text: str) -> bool:
+    """True only when Steve explicitly says to start the Cursor agent."""
+    lowered = text.lower()
+    return bool(
+        re.search(r"\b(?:start|launch|open|spawn)\s+(?:a\s+)?(?:cursor\s+)?(?:cloud\s+)?agent\b", lowered)
+        or re.search(r"\bgo\s+ahead\s+and\s+(?:start|send)\b", lowered)
+        or re.search(r"\bstart\s+next\s+step\b", lowered)
+    )
+
+
 def wants_start(message: str) -> bool:
     text = (message or "").strip()
     if not text or wsl_switch_reply(text) or diverged_ff_reply(text) or local_merge_repair(text):
@@ -1990,6 +2007,13 @@ def wants_start(message: str) -> bool:
         return True
     if wants_cursor_setup(text):
         return True
+    # #68: sequence numbers, "write a Cline prompt", file paths, and Cline results
+    # should only trigger wants_start if Steve explicitly says to start the agent.
+    if (_SEQ_NUMBER_ONLY_RE.search(text)
+        or _WRITE_CLINE_PROMPT_ONLY_RE.search(text)
+        or _FILE_PATH_ONLY_RE.search(text)
+        or _CLINE_RESULT_ONLY_RE.search(text)):
+        return _is_cursor_start_explicit(text)
     for match in _START_RE.finditer(text):
         prefix = text[max(0, match.start() - 32) : match.start()]
         if _NEGATED_START_RE.search(prefix):

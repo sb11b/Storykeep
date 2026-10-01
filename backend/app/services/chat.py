@@ -438,6 +438,24 @@ def should_attach_chat_tools(message: str) -> bool:
     return not is_short_chat(message) and not is_small_talk_turn(message)
 
 
+# Patterns that should NOT trigger xhigh unless Steve explicitly says to start the agent.
+_SEQ_NUMBER_RE = re.compile(r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*\d+\b", re.I)
+_WRITE_CLINE_PROMPT_RE = re.compile(r"\bwrite\s+a\s+cline\s+prompt\b", re.I)
+_FILE_PATH_RE = re.compile(r"\b[\w/\\.-]+\.(?:py|tsx?|ts|js|md|sql)\b", re.I)
+_CLINE_RESULT_RE = re.compile(r"\bcline\s+(?:returned|result|output|said)\b|\bresult\s+from\s+cline\b", re.I)
+
+
+def _is_cursor_start_explicit(text: str) -> bool:
+    """True only when Steve explicitly says to start the Cursor agent."""
+    lowered = (text or "").strip().lower()
+    return bool(
+        re.search(r"\b(?:start|launch|open|spawn)\s+(?:a\s+)?(?:cursor\s+)?(?:cloud\s+)?agent\b", lowered)
+        or re.search(r"\bgo\s+ahead\s+and\s+(?:start|send)\b", lowered)
+        or re.search(r"\bstart\s+next\s+step\b", lowered)
+        or re.search(r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*\d+\b", lowered)
+    )
+
+
 def pick_xhigh_for_auto(message: str, history: list[dict[str, str]] | None = None) -> bool:
     """True only for school/code, or a long analyze turn. Short chat stays low."""
     del history  # prior replies must not force xhigh on "hello"
@@ -458,6 +476,13 @@ def pick_xhigh_for_auto(message: str, history: list[dict[str, str]] | None = Non
         or cursor_agent_tool.is_cursor_start_negated(text)
     ):
         return False
+    # #68: sequence numbers, "write a Cline prompt", file paths, and Cline results
+    # should not trigger xhigh unless Steve explicitly says to start the agent.
+    if (_SEQ_NUMBER_RE.search(text)
+        or _WRITE_CLINE_PROMPT_RE.search(text)
+        or _FILE_PATH_RE.search(text)
+        or _CLINE_RESULT_RE.search(text)):
+        return _is_cursor_start_explicit(text)
     if junior_model.is_cursor_task_turn(text):
         return True
     if junior_model.is_delegate_turn(text):

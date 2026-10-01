@@ -81,6 +81,56 @@ class OpsTurnTests(unittest.TestCase):
         self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
         self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
 
+    def test_pick_xhigh_for_auto_false_sequence_number(self):
+        from app.services import chat as chat_service
+        msg = "sequenced #68 pick xhigh"
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
+
+    def test_pick_xhigh_for_auto_false_write_cline_prompt(self):
+        from app.services import chat as chat_service
+        msg = "write a Cline prompt to fix the bug"
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
+
+    def test_pick_xhigh_for_auto_false_file_path(self):
+        from app.services import chat as chat_service
+        msg = "backend/app/services/chat.py needs review"
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
+
+    def test_pick_xhigh_for_auto_false_cline_result(self):
+        from app.services import chat as chat_service
+        msg = "Cline returned the fix for login"
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
+
+    def test_pick_xhigh_for_auto_true_explicit_start(self):
+        from app.services import chat as chat_service
+        # Explicit start should still return True for sequence number
+        msg = "go ahead and start sequenced #68"
+        self.assertTrue(chat_service.pick_xhigh_for_auto(msg))
+
+    def test_wants_start_false_for_sequence_number(self):
+        msg = "sequenced #68 pick xhigh"
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
+    def test_wants_start_false_for_write_cline_prompt(self):
+        msg = "write a Cline prompt to fix the bug"
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
+    def test_wants_start_false_for_file_path(self):
+        msg = "backend/app/services/chat.py needs review"
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
+    def test_wants_start_false_for_cline_result(self):
+        msg = "Cline returned the fix for login"
+        self.assertFalse(cursor_agent_tool.wants_start(msg))
+
+    def test_wants_start_true_explicit_start(self):
+        msg = "go ahead and start sequenced #68"
+        self.assertTrue(cursor_agent_tool.wants_start(msg))
+
 
 if __name__ == "__main__":
     unittest.main()
