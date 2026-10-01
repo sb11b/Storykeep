@@ -82,21 +82,27 @@ class SimpleUser:
         self.id = user_id
 
 
+def _usable_bugbot_text(section: str, done: bool) -> str | None:
+    text = (section or "").strip()
+    if not done or not text:
+        return None
+    if "has not finished" in text or "No pull request yet" in text:
+        return None
+    return text
+
+
 def _poll_bugbot(db: Session, row: CursorAgentWatch, *, now: datetime, stale: bool) -> None:
+    del stale
     snapshot = cursor_agent_tool.fetch_run(row.agent_id, row.run_id)
     if snapshot.run_id and snapshot.run_id != row.run_id:
         row.run_id = snapshot.run_id
     section, done = cursor_agent_tool.bugbot_section(snapshot.pr_url)
-    if done and section:
-        _post_follow_up(db, row, section)
+    usable = _usable_bugbot_text(section, done)
+    if usable:
+        _post_follow_up(db, row, usable)
         return
-    if stale:
-        _post_follow_up(
-            db,
-            row,
-            "Review analytics\n\nBugbot has not finished a review for this pull request yet.",
-        )
-        return
+    # Bugbot is off. A missing review is not a chat message.
+    row.status = POSTED
     row.updated_at = now
 
 
@@ -123,7 +129,7 @@ def poll_one(db: Session, row: CursorAgentWatch, *, now: datetime | None = None)
             base=base,
             title=f"Junior: {snapshot.branch}",
             body=(
-                "Opened so Bugbot can review this Junior Cloud Agent branch.\n\n"
+                "Opened for review. CodeRabbit reviews this pull request. Bugbot is off.\n\n"
                 f"Agent: {row.agent_url or ''}"
             ),
         )
@@ -133,10 +139,9 @@ def poll_one(db: Session, row: CursorAgentWatch, *, now: datetime | None = None)
         row.updated_at = instant
         return
     bugbot_text = None
-    bugbot_waiting = False
     if (snapshot.status or "").upper() == "FINISHED":
-        bugbot_text, bugbot_done = cursor_agent_tool.bugbot_section(snapshot.pr_url)
-        bugbot_waiting = not bugbot_done
+        section, done = cursor_agent_tool.bugbot_section(snapshot.pr_url)
+        bugbot_text = _usable_bugbot_text(section, done)
     text = cursor_agent_tool.format_follow_up(
         snapshot,
         agent_url=row.agent_url,
@@ -147,7 +152,7 @@ def poll_one(db: Session, row: CursorAgentWatch, *, now: datetime | None = None)
     if text is None:
         row.updated_at = instant
         return
-    _post_follow_up(db, row, text, status=BUGBOT if bugbot_waiting else POSTED)
+    _post_follow_up(db, row, text, status=POSTED)
 
 
 def poll_agent_watches() -> None:

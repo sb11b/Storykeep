@@ -128,10 +128,12 @@ class AgentFollowUpTests(unittest.TestCase):
             updated_at=None,
         )
         poll_one(MagicMock(), row)
-        self.assertEqual(row.status, "bugbot")
+        self.assertEqual(row.status, "posted")
         self.assertIn("Finished.", append_message.call_args.kwargs["content"])
         self.assertNotIn("Review analytics", append_message.call_args.kwargs["content"])
+        self.assertNotIn("has not finished", append_message.call_args.kwargs["content"])
         open_pull_request.assert_called_once()
+        self.assertIn("Bugbot is off", open_pull_request.call_args.kwargs["body"])
 
     @patch(
         "app.services.cursor_agent_tool.bugbot_section",
@@ -165,6 +167,34 @@ class AgentFollowUpTests(unittest.TestCase):
         self.assertIn("Review analytics", append_message.call_args.kwargs["content"])
         self.assertIn("abcdef123456", append_message.call_args.kwargs["content"])
         bugbot_section.assert_called_once()
+
+    @patch("app.services.cursor_agent_tool.bugbot_section", return_value=("", False))
+    @patch("app.services.cursor_agent_watch.grok_store.append_message")
+    @patch("app.services.cursor_agent_watch.grok_store.lookup_owned_conversation")
+    @patch("app.services.cursor_agent_watch.cursor_agent_tool.fetch_run")
+    def test_stale_bugbot_watch_stays_quiet(self, fetch_run, lookup, append_message, _bugbot):
+        fetch_run.return_value = AgentRunSnapshot(
+            "FINISHED",
+            "Done.",
+            "cursor/mail-pin",
+            "https://github.com/sb11b/Storykeep-/pull/12",
+            "run-1",
+        )
+        lookup.return_value = SimpleNamespace(id=uuid.uuid4())
+        row = SimpleNamespace(
+            user_id=uuid.uuid4(),
+            conversation_id=uuid.uuid4(),
+            agent_id="bc-1",
+            run_id="run-1",
+            agent_url="",
+            starting_branch="main",
+            status="bugbot",
+            created_at=datetime.now(timezone.utc) - timedelta(hours=4),
+            updated_at=None,
+        )
+        poll_one(MagicMock(), row)
+        self.assertEqual(row.status, "posted")
+        append_message.assert_not_called()
 
 
 class CursorMemoryFixTests(unittest.TestCase):

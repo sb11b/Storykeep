@@ -113,7 +113,11 @@ def _windows(http):
 
 class SharedClientSmokeTests(unittest.TestCase):
     def test_health_stamp_matches_build(self):
+<<<<<<< HEAD
         self.assertEqual(HEALTH_STAMP, "junior-client-project-memory-note-get-v1")
+=======
+        self.assertEqual(HEALTH_STAMP, "junior-bugbot-silence-v1")
+>>>>>>> github/main
         build = json.loads(
             (Path(__file__).resolve().parents[1] / "app" / "build-info.json").read_text(encoding="utf-8")
         )
