@@ -38,7 +38,7 @@ Do not say the only tool is web_search; you also have calendar/mail/chats when c
 """
 
 _STATUS_RE = re.compile(
-    r"\b(?:github|git(?:hub)?(?:\s+repo|\s+status)?|"
+    r"\b(?:github(?:\s+repo|\s+status)?|"
     r"pull request|pull requests|\bpr\b|\bprs\b|"
     r"commit(?:s)?|branch(?:es)?|"
     r"workflow|ci(?:\s+status)?|"
