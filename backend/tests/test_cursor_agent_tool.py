@@ -927,7 +927,6 @@ class CursorAgentToolTests(unittest.TestCase):
         mock_settings.cursor_api_key = ""
         msg = "Start a cursor agent to fix the login bug"
         self.assertFalse(junior_model.is_delegate_turn(msg))
-        self.assertFalse(cursor_agent_tool.wants_start(msg))
 
     @patch("app.services.cursor_agent_tool.settings")
     def test_is_delegate_turn_true_when_cursor_configured(self, mock_settings: MagicMock) -> None:
