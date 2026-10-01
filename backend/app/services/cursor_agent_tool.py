@@ -2003,6 +2003,9 @@ def wants_start(message: str) -> bool:
         return False
     if _OPERATOR_RULES_RE.search(text):
         return False
+    # Sequence numbers alone should not trigger wants_start.
+    if _SEQ_NUMBER_ONLY_RE.search(text):
+        return False
     if sequenced_task(text):
         return True
     if wants_cursor_setup(text):

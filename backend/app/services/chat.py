@@ -456,7 +456,6 @@ def _is_cursor_start_explicit(text: str) -> bool:
         re.search(r"\b(?:start|launch|open|spawn)\s+(?:a\s+)?(?:cursor\s+)?(?:cloud\s+)?agent\b", lowered)
         or re.search(r"\bgo\s+ahead\s+and\s+(?:start|send)\b", lowered)
         or re.search(r"\bstart\s+next\s+step\b", lowered)
-        or re.search(r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*\d+\b", lowered)
     )
 
 
