@@ -12,6 +12,4 @@ agent-tools
 frontend/public/file.svg
 .env
 **/.env
-docs
-*.md
 !README.md
