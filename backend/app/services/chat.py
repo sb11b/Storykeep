@@ -481,8 +481,10 @@ def pick_xhigh_for_auto(message: str, history: list[dict[str, str]] | None = Non
         return False
     # #68: sequence numbers, "write a Cline prompt", file paths, and Cline results
     # should not trigger xhigh unless Steve explicitly says to start the agent.
-    if (_SEQ_NUMBER_RE.search(text)
-        or _WRITE_CLINE_PROMPT_RE.search(text)
+    # Sequence numbers return false early, before explicit-start detection.
+    if _SEQ_NUMBER_RE.search(text):
+        return False
+    if (_WRITE_CLINE_PROMPT_RE.search(text)
         or _FILE_PATH_RE.search(text)
         or _CLINE_RESULT_RE.search(text)):
         return _is_cursor_start_explicit(text)
