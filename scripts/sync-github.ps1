@@ -11,8 +11,14 @@ Write-Host "Fetching latest from Cursor Origin..."
 git fetch origin
 git merge origin/main --no-edit
 
+$branch = git rev-parse --abbrev-ref HEAD
+if ($branch -eq "main") {
+    Write-Error "Windows never pushes main. Switch to a feature branch or push from Ubuntu."
+    exit 1
+}
+
 Write-Host "Pushing to GitHub (sb11b/Storykeep-)..."
-git push github main
+git push github $branch
 
 Write-Host ""
 Write-Host "Done. In Railway: open the storykeep WEB service (not Postgres) -> Deployments -> Redeploy."
