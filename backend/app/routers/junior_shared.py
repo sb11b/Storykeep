@@ -2477,13 +2477,16 @@ def create_or_update_document(
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ) -> JuniorDocumentOut:
+    fields = payload.model_fields_set
     row = store.upsert_document(
         db,
         user,
         slug=payload.slug,
         title=payload.title,
-        text=payload.text,
-        summary=payload.summary,
+        text=payload.text if "text" in fields else None,
+        summary=payload.summary if "summary" in fields else None,
+        set_text="text" in fields,
+        set_summary="summary" in fields,
     )
     db.commit()
     db.refresh(row)

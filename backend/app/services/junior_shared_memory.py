@@ -2591,6 +2591,7 @@ def _document_out(row: JuniorDocument) -> dict[str, Any]:
 
 
 def get_document(db: Session, user: User, slug: str) -> JuniorDocument:
+    slug = normalize_slug(slug)
     row = db.scalar(
         select(JuniorDocument).where(JuniorDocument.user_id == user.id, JuniorDocument.slug == slug)
     )
@@ -2607,16 +2608,35 @@ def list_documents_page(
     db: Session,
     user: User,
     *,
-    limit: int = 50,
+    limit: int = PAGE_DEFAULT,
     cursor: str | None = None,
     before_id: Any | None = None,
 ) -> tuple[list[JuniorDocument], str | None]:
-    q = (
-        select(JuniorDocument)
-        .where(JuniorDocument.user_id == user.id)
-        .order_by(JuniorDocument.created_at.desc())
-    )
-    return paginate(q, db, limit=limit, cursor=cursor, before_id=before_id)
+    cap = clamp_page_limit(limit)
+    stmt = select(JuniorDocument).where(JuniorDocument.user_id == user.id)
+    marker = _as_uuid(before_id) or _as_uuid(cursor)
+    if marker is not None:
+        ref = db.scalar(
+            select(JuniorDocument).where(
+                JuniorDocument.user_id == user.id, JuniorDocument.id == marker
+            )
+        )
+        if ref is not None:
+            stmt = stmt.where(
+                or_(
+                    JuniorDocument.created_at < ref.created_at,
+                    and_(
+                        JuniorDocument.created_at == ref.created_at,
+                        JuniorDocument.id < ref.id,
+                    ),
+                )
+            )
+    stmt = stmt.order_by(JuniorDocument.created_at.desc(), JuniorDocument.id.desc()).limit(cap + 1)
+    rows = list(db.scalars(stmt))
+    has_more = len(rows) > cap
+    page = rows[:cap]
+    next_cursor = str(page[-1].id) if has_more and page else None
+    return page, next_cursor
 
 
 def upsert_document(
@@ -2626,7 +2646,11 @@ def upsert_document(
     title: str,
     text: str | None = None,
     summary: str | None = None,
+    *,
+    set_text: bool = False,
+    set_summary: bool = False,
 ) -> JuniorDocument:
+    slug = normalize_slug(slug)
     existing = db.scalar(
         select(JuniorDocument).where(JuniorDocument.user_id == user.id, JuniorDocument.slug == slug)
     )
@@ -2636,13 +2660,17 @@ def upsert_document(
     else:
         row = existing
         row.title = title
-        row.text = text or ""
-        row.summary = summary
+        if set_text:
+            row.text = text or ""
+        if set_summary:
+            row.summary = summary
+        row.updated_at = datetime.now(timezone.utc)
     db.flush()
     return row
 
 
 def delete_document(db: Session, user: User, slug: str) -> None:
+    slug = normalize_slug(slug)
     row = get_document(db, user, slug)
     db.delete(row)
 
