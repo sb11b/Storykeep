@@ -58,6 +58,7 @@ from app.services import x_search as x_tool
 from app.services import railway_tool
 from app.services import github_tool
 from app.services import cursor_agent_tool
+from app.services import junior_shared_memory
 from app.services import chat_index
 from app.services import message_crypto
 from app.services import tts as tts_service
@@ -1251,6 +1252,12 @@ def _chat(
         ops_turn=ops_turn,
         delegate_turn=delegate_turn,
     )
+    docs = junior_shared_memory.get_documents_for_prompt(db, user, cap=20)
+    if docs:
+        doc_lines = ["Stored documents:"]
+        for doc in docs:
+            doc_lines.append(f"- {doc['title']} (/{doc['slug']})")
+        turn_extras.append("\n".join(doc_lines))
     pane_note = junior_model.pane_mismatch_note(user_text, payload.pane_name)
     if pane_note:
         turn_extras.append(junior_model.PANE_MISMATCH_APPEND)

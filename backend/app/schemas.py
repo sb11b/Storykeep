@@ -936,6 +936,25 @@ class JuniorProjectOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JuniorDocumentIn(BaseModel):
+    slug: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=120)
+    text: str = Field(default="", max_length=32000)
+    summary: str | None = Field(default=None, max_length=4000)
+
+
+class JuniorDocumentOut(BaseModel):
+    id: uuid.UUID
+    slug: str
+    title: str
+    text: str
+    summary: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class JuniorAgentContextIn(BaseModel):
     q: str | None = Field(default=None, max_length=200)
     thread_id: uuid.UUID | None = None
@@ -947,6 +966,7 @@ class JuniorAgentContextOut(BaseModel):
     recent_messages: list[JuniorSharedMessageOut] = Field(default_factory=list)
     memories: list[JuniorSharedMemoryOut] = Field(default_factory=list)
     search_hits: list[JuniorSharedSearchHitOut] = Field(default_factory=list)
+    documents: list[JuniorDocumentOut] = Field(default_factory=list)
     launch_hint: str
 
 

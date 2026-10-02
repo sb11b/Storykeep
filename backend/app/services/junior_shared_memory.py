@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (
     JuniorAgentRun,
+    JuniorDocument,
     JuniorMemoryFact,
     JuniorProject,
     JuniorSession,
@@ -2023,6 +2024,7 @@ def build_agent_context(
             hits = search(db, user, q, limit=8)
         except HTTPException:
             hits = []
+    documents = get_documents_for_prompt(db, user, cap=20)
     return {
         "project": project,
         "thread": thread,
@@ -2030,6 +2032,7 @@ def build_agent_context(
         "recent_messages": recent,
         "memories": memories,
         "search_hits": hits,
+        "documents": documents,
         "launch_hint": launch_hint(project),
     }
 
@@ -2570,3 +2573,91 @@ def seed_owner_projects_and_decisions(db: Session) -> None:
         )
         if found is None:
             upsert_memory(db, user, memory_id=None, kind="decision", content=content, source_thread=None)
+
+
+# ── Document CRUD ─────────────────────────────────────────────────────────
+
+
+def _document_out(row: JuniorDocument) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "slug": row.slug,
+        "title": row.title,
+        "text": row.text,
+        "summary": row.summary,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def get_document(db: Session, user: User, slug: str) -> JuniorDocument:
+    row = db.scalar(
+        select(JuniorDocument).where(JuniorDocument.user_id == user.id, JuniorDocument.slug == slug)
+    )
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    return row
+
+
+def document_owned(db: Session, user: User, slug: str) -> JuniorDocument:
+    return get_document(db, user, slug)
+
+
+def list_documents_page(
+    db: Session,
+    user: User,
+    *,
+    limit: int = 50,
+    cursor: str | None = None,
+    before_id: Any | None = None,
+) -> tuple[list[JuniorDocument], str | None]:
+    q = (
+        select(JuniorDocument)
+        .where(JuniorDocument.user_id == user.id)
+        .order_by(JuniorDocument.created_at.desc())
+    )
+    return paginate(q, db, limit=limit, cursor=cursor, before_id=before_id)
+
+
+def upsert_document(
+    db: Session,
+    user: User,
+    slug: str,
+    title: str,
+    text: str | None = None,
+    summary: str | None = None,
+) -> JuniorDocument:
+    existing = db.scalar(
+        select(JuniorDocument).where(JuniorDocument.user_id == user.id, JuniorDocument.slug == slug)
+    )
+    if existing is None:
+        row = JuniorDocument(user_id=user.id, slug=slug, title=title, text=text or "", summary=summary)
+        db.add(row)
+    else:
+        row = existing
+        row.title = title
+        row.text = text or ""
+        row.summary = summary
+    db.flush()
+    return row
+
+
+def delete_document(db: Session, user: User, slug: str) -> None:
+    row = get_document(db, user, slug)
+    db.delete(row)
+
+
+# ── Document helpers for prompt injection ───────────────────────────────────
+
+
+def get_documents_for_prompt(
+    db: Session, user: User, *, cap: int = 20
+) -> list[dict[str, Any]]:
+    """Return documents for injection into Junior's prompt context."""
+    rows = db.scalars(
+        select(JuniorDocument)
+        .where(JuniorDocument.user_id == user.id)
+        .order_by(JuniorDocument.created_at.desc())
+        .limit(cap)
+    ).all()
+    return [_document_out(r) for r in rows]

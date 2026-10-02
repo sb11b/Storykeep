@@ -19,6 +19,8 @@ from app.schemas import (
     JuniorThreadAgentLaunchIn,
     JuniorAgentRunIn,
     JuniorAgentRunOut,
+    JuniorDocumentIn,
+    JuniorDocumentOut,
     JuniorProjectIn,
     JuniorProjectOut,
     JuniorSharedContinueIn,
@@ -964,6 +966,7 @@ def _context_out(pack: dict) -> JuniorAgentContextOut:
         recent_messages=[JuniorSharedMessageOut.model_validate(row) for row in pack.get("recent_messages") or []],
         memories=[JuniorSharedMemoryOut.model_validate(row) for row in pack.get("memories") or []],
         search_hits=[JuniorSharedSearchHitOut.model_validate(hit) for hit in pack.get("search_hits") or []],
+        documents=[JuniorDocumentOut.model_validate(doc) for doc in pack.get("documents") or []],
         launch_hint=str(pack.get("launch_hint") or ""),
     )
 
@@ -2447,3 +2450,60 @@ def launch_agent_stub(
         context=_context_out(pack),
         called_cursor_api=False,
     )
+
+
+# ── Documents ───────────────────────────────────────────────────────────────
+
+
+@router.get("/documents", response_model=list[JuniorDocumentOut])
+def list_documents(
+    response: Response,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=64),
+    before_id: UUID | None = Query(default=None),
+) -> list[JuniorDocumentOut]:
+    rows, next_cursor = store.list_documents_page(
+        db, user, limit=limit, cursor=cursor, before_id=before_id
+    )
+    _page_headers(response, next_cursor)
+    return [JuniorDocumentOut.model_validate(row) for row in rows]
+
+
+@router.post("/documents", response_model=JuniorDocumentOut)
+def create_or_update_document(
+    payload: JuniorDocumentIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorDocumentOut:
+    row = store.upsert_document(
+        db,
+        user,
+        slug=payload.slug,
+        title=payload.title,
+        text=payload.text,
+        summary=payload.summary,
+    )
+    db.commit()
+    db.refresh(row)
+    return JuniorDocumentOut.model_validate(row)
+
+
+@router.get("/documents/{slug}", response_model=JuniorDocumentOut)
+def get_document(
+    slug: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> JuniorDocumentOut:
+    return JuniorDocumentOut.model_validate(store.document_owned(db, user, slug))
+
+
+@router.delete("/documents/{slug}")
+def delete_document(
+    slug: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_user),
+) -> None:
+    store.delete_document(db, user, slug)
+    db.commit()

@@ -725,6 +725,25 @@ class JuniorProject(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class JuniorDocument(Base):
+    """Per-project stored document with title, slug, text, and summary."""
+
+    __tablename__ = "junior_documents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "slug", name="junior_documents_user_slug_key"),
+        Index("junior_documents_user_slug_idx", "user_id", "slug"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    slug: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class JuniorAgentRun(Base):
     """Record of a Cursor-agent launch attempt. This slice stores context only."""
 
