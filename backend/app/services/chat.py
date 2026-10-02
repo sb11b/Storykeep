@@ -227,8 +227,8 @@ def _load_doc(path_relative: str) -> str:
     """Load a docs file relative to the project root. If missing, return empty."""
     base_dir = os.path.dirname(__file__)
     # Local dev: backend/app/services -> ../../.. -> project root
-    # Docker: /app/services -> .. -> /app (where COPY docs ./docs lands)
-    for up in ("../../..", ".."):
+    # Docker: /app/app/services -> ../.. -> /app (where COPY docs ./docs lands)
+    for up in ("../../..", "../.."):
         try:
             root = os.path.abspath(os.path.join(base_dir, up))
             path = os.path.join(root, path_relative)
