@@ -155,6 +155,12 @@ class OpsTurnTests(unittest.TestCase):
             "low",
         )
 
+    def test_on_branch_alone_is_not_pasted_ops_log(self):
+        # A sentence with only "on branch" must not be treated as a pasted log.
+        self.assertFalse(junior_model.is_pasted_ops_log("Show GitHub status on branch main"))
+        # And it must still be an ops turn.
+        self.assertTrue(junior_model.is_ops_turn("Show GitHub status on branch main"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -198,12 +198,14 @@ def is_cline_operator_message(message: str) -> bool:
 
 # Detect pasted git status, git log, or Railway deploy log output.
 # These pastes must stay on low and must not be treated as ops turns.
+# Require at least two indicators so a lone "on branch" in a sentence does not match.
 _PASTED_GIT_STATUS_RE = re.compile(
     r"(?:On branch\s+\S+|"
     r"Your branch is\s+(?:up to date|ahead|behind)|"
     r"Changes to be committed:|"
     r"Changes not staged for commit:|"
     r"Untracked files:|"
+    r"nothing to commit|"
     r"modified:\s+\S+|"
     r"deleted:\s+\S+|"
     r"new file:\s+\S+|"
@@ -227,7 +229,11 @@ def is_pasted_ops_log(message: str) -> bool:
     text = (message or "").strip()
     if not text:
         return False
-    return bool(_PASTED_GIT_STATUS_RE.search(text) or _PASTED_RAILWAY_LOG_RE.search(text))
+    # A single indicator (e.g. lone "on branch" in a sentence) is not enough.
+    git_hits = len(_PASTED_GIT_STATUS_RE.findall(text))
+    if git_hits >= 2:
+        return True
+    return bool(_PASTED_RAILWAY_LOG_RE.search(text))
 
 
 def is_ops_turn(message: str) -> bool:
