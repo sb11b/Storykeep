@@ -1252,12 +1252,9 @@ def _chat(
         ops_turn=ops_turn,
         delegate_turn=delegate_turn,
     )
-    docs = junior_shared_memory.get_documents_for_prompt(db, user, cap=20)
-    if docs:
-        doc_lines = ["Stored documents:"]
-        for doc in docs:
-            doc_lines.append(f"- {doc['title']} (/{doc['slug']})")
-        turn_extras.append("\n".join(doc_lines))
+    ledger_text = junior_shared_memory.get_ledger_for_prompt(db, user)
+    if ledger_text:
+        turn_extras.append(f"Ledger:\n{ledger_text}")
     pane_note = junior_model.pane_mismatch_note(user_text, payload.pane_name)
     if pane_note:
         turn_extras.append(junior_model.PANE_MISMATCH_APPEND)
