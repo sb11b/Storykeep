@@ -251,8 +251,6 @@ def _load_junior_system() -> str:
     return "\n\n".join(parts)
 
 
-_JUNIOR_SYSTEM_FILE = _load_junior_system()
-
 RECAP_MODE_APPEND = """
 Steve enabled "Recap my question" for this thread. You may briefly restate his question before answering when it helps clarity.
 """
@@ -1241,8 +1239,9 @@ def build_system_content(
     extra_system: str | None = None,
 ) -> str:
     system = SYSTEM_PROMPT
-    if _JUNIOR_SYSTEM_FILE:
-        system += "\n\n" + _JUNIOR_SYSTEM_FILE
+    junior_system = _load_junior_system()
+    if junior_system:
+        system += "\n\n" + junior_system
     grounded = False
     if include_article and excerpt:
         system += ARTICLE_MODE_APPEND + "\n\nCurrent article excerpt (truncated):\n" + excerpt

@@ -117,14 +117,14 @@ class ChatGuardTests(unittest.TestCase):
         self.assertNotIn("please attach", lower)
 
     def test_system_prompt_includes_both_junior_docs(self):
-        from app.services.chat import _JUNIOR_SYSTEM_FILE
+        from app.services.chat import build_system_content
 
-        # _JUNIOR_SYSTEM_FILE is loaded at import time from the actual docs
-        self.assertIn("Junior System Document", _JUNIOR_SYSTEM_FILE)
-        self.assertIn("Junior Android", _JUNIOR_SYSTEM_FILE)
-        self.assertIn("Talk", _JUNIOR_SYSTEM_FILE)
-        self.assertIn("Conversation", _JUNIOR_SYSTEM_FILE)
-        self.assertIn("Stories", _JUNIOR_SYSTEM_FILE)
+        system = build_system_content(None, include_article=False)
+        self.assertIn("Junior System Document", system)
+        self.assertIn("Junior Android", system)
+        self.assertIn("Talk", system)
+        self.assertIn("Conversation", system)
+        self.assertIn("Stories", system)
 
     def test_owner_upload_prompt_transcribes_without_copyright_lecture(self):
         from app.services.chat import ATTACHMENT_MODE_APPEND
