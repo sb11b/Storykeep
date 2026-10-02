@@ -223,16 +223,28 @@ Rules:
 """
 
 
-def _load_junior_system() -> str:
-    """Load docs/junior-system.md relative to the project root. If missing, return empty."""
+def _load_doc(path_relative: str) -> str:
+    """Load a docs file relative to the project root. If missing, return empty."""
     try:
         # Resolve path relative to this file: backend/app/services -> ../../.. -> project root
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        path = os.path.join(project_root, "docs", "junior-system.md")
+        path = os.path.join(project_root, path_relative)
         with open(path, "r", encoding="utf-8") as fh:
             return fh.read()
     except (OSError, FileNotFoundError):
         return ""
+
+
+def _load_junior_system() -> str:
+    """Load docs/junior-system.md and docs/junior-android-plan.md. Skip missing files."""
+    parts: list[str] = []
+    system_doc = _load_doc(os.path.join("docs", "junior-system.md"))
+    if system_doc:
+        parts.append(system_doc)
+    android_doc = _load_doc(os.path.join("docs", "junior-android-plan.md"))
+    if android_doc:
+        parts.append(android_doc)
+    return "\n\n".join(parts)
 
 
 _JUNIOR_SYSTEM_FILE = _load_junior_system()
