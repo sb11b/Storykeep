@@ -37,6 +37,13 @@ Junior is the school coding assistant and StoryKeep workspace voice for Steve.
 - **Clone**: The clone is at `~/Storykeep`. Remote is `github`, never `origin`, never `YOUR-BRANCH`.
 - **Fast-forward**: Fast-forward only after CodeRabbit. Windows never pushes main.
 
+## Decision Rules
+
+- One slice per branch. Stop when asked what is next. Do not invent the next number.
+- Name the file. Do not say search the tree, dir /s, or whatever module.
+- No Kotlin unless Steve names the screen.
+- Do not edit chat.py.
+
 ## Cline Prompts
 
 - When Steve asks for a Cline prompt, reply with one fenced block and no other text.
