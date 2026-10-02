@@ -1979,7 +1979,12 @@ def is_cursor_start_negated(message: str) -> bool:
 
 
 # Patterns for #68 — these should NOT trigger wants_start unless Steve explicitly says to start.
-_SEQ_NUMBER_ONLY_RE = re.compile(r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*\d+\b", re.I)
+_SEQ_NUMBER_ONLY_RE = re.compile(
+    r"\bsequenc(?:e|ed)\s+(?:number\s+)?#?\s*"
+    r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|twenty-one|twenty-two|twenty-three|twenty-four|twenty-five|twenty-six|twenty-seven|twenty-eight|twenty-nine|thirty)\b"
+    r"|\b(?:sequenced\s+)?#\s*(\d+)\b",
+    re.I,
+)
 _WRITE_CLINE_PROMPT_ONLY_RE = re.compile(r"\bwrite\s+a\s+cline\s+prompt\b", re.I)
 _FILE_PATH_ONLY_RE = re.compile(r"\b[\w/\\.-]+\.(?:py|tsx?|ts|js|md|sql)\b", re.I)
 _CLINE_RESULT_ONLY_RE = re.compile(r"\bcline\s+(?:returned|result|output|said)\b|\bresult\s+from\s+cline\b", re.I)
