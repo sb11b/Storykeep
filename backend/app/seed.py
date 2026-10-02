@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import JuniorDocument, User
+from app.models import User
 
 DEMO_EMAIL = "steve@storykeep.local"
 OWNER_EMAIL = "angry.tune8751@fastmail.com"
@@ -25,22 +25,15 @@ def _seed_owner_ledger(db: Session) -> None:
     user = db.scalar(select(User).where(User.email == OWNER_EMAIL))
     if user is None or is_locked(user):
         return
-    existing = db.scalar(
-        select(JuniorDocument).where(
-            JuniorDocument.user_id == user.id,
-            JuniorDocument.slug == "junior-ledger",
-        )
-    )
-    if existing is not None:
-        return
-    db.add(
-        JuniorDocument(
-            user_id=user.id,
-            slug="junior-ledger",
-            title="Junior ledger",
-            text=_LEDGER_TEXT,
-            summary=None,
-        )
+    db.execute(
+        sa_text(
+            """
+            INSERT INTO junior_documents (id, user_id, slug, title, text, summary, created_at, updated_at)
+            VALUES (gen_random_uuid(), :user_id, 'junior-ledger', 'Junior ledger', :text, NULL, now(), now())
+            ON CONFLICT DO NOTHING
+            """
+        ),
+        {"user_id": str(user.id), "text": _LEDGER_TEXT},
     )
 
 
