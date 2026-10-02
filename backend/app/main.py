@@ -20,7 +20,7 @@ from app.request_logging import JuniorRequestLogMiddleware
 from app.database import Base, SessionLocal, engine
 from app.models import Feed
 from app.routers import articles, auth, backups, calendar, chat, feeds, junior_chats, junior_jobs, junior_memory, junior_shared, library, mail, overlay, school, stt, sync, tts
-from app.seed import seed_demo
+from app.seed import seed_demo, _seed_owner_ledger
 from app.services import rss
 from app.services.backup import run_scheduled_s3_dumps
 
@@ -290,6 +290,7 @@ def _seed_in_background() -> None:
         from app.services.junior_shared_memory import seed_owner_projects_and_decisions
 
         seed_owner_projects_and_decisions(db)
+        _seed_owner_ledger(db)
         db.commit()
     except Exception:
         logger.exception("Seed failed")
