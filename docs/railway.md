@@ -112,7 +112,7 @@ Or manually:
 ```powershell
 git fetch origin
 git merge origin/main
-git push github main
+# Windows never pushes main.
 ```
 
 Then in Railway: **storykeep web service** (not Postgres) → **Deployments** → **Redeploy** (or wait for auto-deploy).
