@@ -133,6 +133,28 @@ class OpsTurnTests(unittest.TestCase):
         msg = "go ahead and start sequenced #68"
         self.assertFalse(cursor_agent_tool.wants_start(msg))
 
+    def test_pasted_git_status_stays_low(self):
+        from app.services import chat as chat_service
+        msg = (
+            "On branch main\n"
+            "Your branch is up to date with 'origin/main'.\n\n"
+            "Changes to be committed:\n"
+            "  (use \"git restore --staged <file>...\" to unstage)\n"
+            "        modified:   backend/app/services/chat.py\n\n"
+            "Changes not staged for commit:\n"
+            "  (use \"git add <file>...\" to update what will be committed)\n"
+            "        modified:   backend/app/services/junior_model.py\n"
+        )
+        self.assertTrue(junior_model.is_pasted_ops_log(msg))
+        self.assertFalse(junior_model.is_ops_turn(msg))
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(
+            chat_service.resolve_reasoning_for_request(
+                chat_service.MODEL_AUTO, "auto", msg, []
+            ),
+            "low",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

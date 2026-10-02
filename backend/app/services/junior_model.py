@@ -196,6 +196,40 @@ def is_cline_operator_message(message: str) -> bool:
     return bool(_CLINE_OPERATOR_RE.search(text))
 
 
+# Detect pasted git status, git log, or Railway deploy log output.
+# These pastes must stay on low and must not be treated as ops turns.
+_PASTED_GIT_STATUS_RE = re.compile(
+    r"(?:On branch\s+\S+|"
+    r"Your branch is\s+(?:up to date|ahead|behind)|"
+    r"Changes to be committed:|"
+    r"Changes not staged for commit:|"
+    r"Untracked files:|"
+    r"modified:\s+\S+|"
+    r"deleted:\s+\S+|"
+    r"new file:\s+\S+|"
+    r"commit\s+[a-f0-9]{7,40}|"
+    r"\bAuthor:\s+)",
+    re.I,
+)
+_PASTED_RAILWAY_LOG_RE = re.compile(
+    r"(?:Building\s+\.\.\.|"
+    r"Deploying\s+to|"
+    r"Success\s*:\s*Deploy|"
+    r"Failed\s*:\s*Deploy|"
+    r"Starting\s+.*\s+deployment|"
+    r"Deployment\s+completed)",
+    re.I,
+)
+
+
+def is_pasted_ops_log(message: str) -> bool:
+    """True when the message is a pasted git status, git log, or Railway deploy log."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    return bool(_PASTED_GIT_STATUS_RE.search(text) or _PASTED_RAILWAY_LOG_RE.search(text))
+
+
 def is_ops_turn(message: str) -> bool:
     from app.services import github_tool
     from app.services import railway_tool
@@ -204,6 +238,8 @@ def is_ops_turn(message: str) -> bool:
     if not text:
         return False
     if is_cline_operator_message(text):
+        return False
+    if is_pasted_ops_log(text):
         return False
     return railway_tool.wants_railway(text) or github_tool.wants_github(text)
 
