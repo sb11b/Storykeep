@@ -225,14 +225,18 @@ Rules:
 
 def _load_doc(path_relative: str) -> str:
     """Load a docs file relative to the project root. If missing, return empty."""
-    try:
-        # Resolve path relative to this file: backend/app/services -> ../../.. -> project root
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        path = os.path.join(project_root, path_relative)
-        with open(path, "r", encoding="utf-8") as fh:
-            return fh.read()
-    except (OSError, FileNotFoundError):
-        return ""
+    base_dir = os.path.dirname(__file__)
+    # Local dev: backend/app/services -> ../../.. -> project root
+    # Docker: /app/services -> .. -> /app (where COPY docs ./docs lands)
+    for up in ("../../..", ".."):
+        try:
+            root = os.path.abspath(os.path.join(base_dir, up))
+            path = os.path.join(root, path_relative)
+            with open(path, "r", encoding="utf-8") as fh:
+                return fh.read()
+        except (OSError, FileNotFoundError):
+            pass
+    return ""
 
 
 def _load_junior_system() -> str:
