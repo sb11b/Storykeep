@@ -161,6 +161,13 @@ class OpsTurnTests(unittest.TestCase):
         # And it must still be an ops turn.
         self.assertTrue(junior_model.is_ops_turn("Show GitHub status on branch main"))
 
+    def test_sentence_with_two_phrases_is_not_pasted_ops_log(self):
+        # Two git phrases in a sentence are not a pasted log.
+        msg = "Check GitHub status. On branch main, nothing to commit."
+        self.assertFalse(junior_model.is_pasted_ops_log(msg))
+        # It must still be an ops turn.
+        self.assertTrue(junior_model.is_ops_turn(msg))
+
 
 if __name__ == "__main__":
     unittest.main()
