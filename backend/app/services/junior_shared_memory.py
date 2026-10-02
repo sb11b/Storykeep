@@ -2677,6 +2677,9 @@ def delete_document(db: Session, user: User, slug: str) -> None:
 
 # ── Document helpers for prompt injection ───────────────────────────────────
 
+# Maximum characters to inject from the junior-ledger document text.
+_LEDGER_CAP = 1_200
+
 
 def get_documents_for_prompt(
     db: Session, user: User, *, cap: int = 20
@@ -2689,3 +2692,19 @@ def get_documents_for_prompt(
         .limit(cap)
     ).all()
     return [_document_out(r) for r in rows]
+
+
+def get_ledger_for_prompt(
+    db: Session, user: User, *, cap: int = _LEDGER_CAP
+) -> str | None:
+    """Return the junior-ledger document text, capped.  None if missing."""
+    row = db.scalar(
+        select(JuniorDocument)
+        .where(JuniorDocument.user_id == user.id, JuniorDocument.slug == "junior-ledger")
+    )
+    if row is None:
+        return None
+    text = (row.text or "").strip()
+    if not text:
+        return None
+    return text[:cap] if len(text) > cap else text
