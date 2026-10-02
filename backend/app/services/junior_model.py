@@ -196,6 +196,55 @@ def is_cline_operator_message(message: str) -> bool:
     return bool(_CLINE_OPERATOR_RE.search(text))
 
 
+# Detect pasted git status, git log, or Railway deploy log output.
+# These pastes must stay on low and must not be treated as ops turns.
+# Each indicator must appear as its own line, not as a phrase inside a sentence.
+_PASTED_GIT_STATUS_LINE_RE = re.compile(
+    r"^(?:On branch\s+\S+|"
+    r"Your branch is\s+(?:up to date|ahead|behind)|"
+    r"Changes to be committed:|"
+    r"Changes not staged for commit:|"
+    r"Untracked files:|"
+    r"nothing to commit|"
+    r"modified:\s+\S+|"
+    r"deleted:\s+\S+|"
+    r"new file:\s+\S+|"
+    r"commit\s+[a-f0-9]{7,40}|"
+    r"Author:\s+)",
+    re.I | re.M,
+)
+_PASTED_RAILWAY_LOG_RE = re.compile(
+    r"(?:Building\s+\.\.\.|"
+    r"Deploying\s+to|"
+    r"Success\s*:\s*Deploy|"
+    r"Failed\s*:\s*Deploy|"
+    r"Starting\s+.*\s+deployment|"
+    r"Deployment\s+completed)",
+    re.I,
+)
+
+
+def _git_status_line_matches(text: str) -> int:
+    """Count how many lines in text look like git status/log output."""
+    count = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if _PASTED_GIT_STATUS_LINE_RE.search(stripped):
+            count += 1
+    return count
+
+
+def is_pasted_ops_log(message: str) -> bool:
+    """True when the message is a pasted git status, git log, or Railway deploy log."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    # A pasted log must be line-shaped: at least two lines match git-status patterns.
+    if _git_status_line_matches(text) >= 2:
+        return True
+    return bool(_PASTED_RAILWAY_LOG_RE.search(text))
+
+
 def is_ops_turn(message: str) -> bool:
     from app.services import github_tool
     from app.services import railway_tool
@@ -204,6 +253,8 @@ def is_ops_turn(message: str) -> bool:
     if not text:
         return False
     if is_cline_operator_message(text):
+        return False
+    if is_pasted_ops_log(text):
         return False
     return railway_tool.wants_railway(text) or github_tool.wants_github(text)
 

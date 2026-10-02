@@ -133,6 +133,41 @@ class OpsTurnTests(unittest.TestCase):
         msg = "go ahead and start sequenced #68"
         self.assertFalse(cursor_agent_tool.wants_start(msg))
 
+    def test_pasted_git_status_stays_low(self):
+        from app.services import chat as chat_service
+        msg = (
+            "On branch main\n"
+            "Your branch is up to date with 'origin/main'.\n\n"
+            "Changes to be committed:\n"
+            "  (use \"git restore --staged <file>...\" to unstage)\n"
+            "        modified:   backend/app/services/chat.py\n\n"
+            "Changes not staged for commit:\n"
+            "  (use \"git add <file>...\" to update what will be committed)\n"
+            "        modified:   backend/app/services/junior_model.py\n"
+        )
+        self.assertTrue(junior_model.is_pasted_ops_log(msg))
+        self.assertFalse(junior_model.is_ops_turn(msg))
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(
+            chat_service.resolve_reasoning_for_request(
+                chat_service.MODEL_AUTO, "auto", msg, []
+            ),
+            "low",
+        )
+
+    def test_on_branch_alone_is_not_pasted_ops_log(self):
+        # A sentence with only "on branch" must not be treated as a pasted log.
+        self.assertFalse(junior_model.is_pasted_ops_log("Show GitHub status on branch main"))
+        # And it must still be an ops turn.
+        self.assertTrue(junior_model.is_ops_turn("Show GitHub status on branch main"))
+
+    def test_sentence_with_two_phrases_is_not_pasted_ops_log(self):
+        # Two git phrases in a sentence are not a pasted log.
+        msg = "Check GitHub status. On branch main, nothing to commit."
+        self.assertFalse(junior_model.is_pasted_ops_log(msg))
+        # It must still be an ops turn.
+        self.assertTrue(junior_model.is_ops_turn(msg))
+
 
 if __name__ == "__main__":
     unittest.main()
