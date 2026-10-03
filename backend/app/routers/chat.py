@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -1644,7 +1645,7 @@ def _chat(
                 yield chat_service.encode_sse("[DONE]")
                 return
             if date_question:
-                ny = datetime.now(dt_timezone("America/New_York"))
+                ny = datetime.now(ZoneInfo("America/New_York"))
                 date_answer = ny.strftime("%A, %B %-d, %Y.")
                 await emit_delta(date_answer)
                 yield chat_service.encode_sse({"delta": date_answer, "stream_status": "writing"})
