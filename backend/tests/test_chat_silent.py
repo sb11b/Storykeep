@@ -284,7 +284,7 @@ class ChatSilentGateTests(unittest.TestCase):
                 json={"message": "hello", "model": "auto", "reasoning_effort": "auto"},
             )
         self.assertEqual(response.status_code, 200)
-        self.assertIn(chat_service.EMPTY_REPLY_FALLBACK, response.text)
+        self.assertIn("The call failed.", response.text)
         self.assertIn("data: [DONE]", response.text)
         self.assertNotIn("returned no text", response.text)
 
