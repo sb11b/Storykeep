@@ -141,27 +141,6 @@ def apply_cursor_memory_fix(markdown: str) -> str | None:
     updated = text
     if CURSOR_DELEGATE_OLD in updated and "when the run finishes" not in updated:
         updated = updated.replace(CURSOR_DELEGATE_OLD, CURSOR_DELEGATE_NEW, 1)
-    needs_section = (
-        STALE_CURSOR_TASK_MARK in updated
-        or "sequence number" not in updated.lower()
-        or "send the next step" not in updated.lower()
-        or "this Storykeep chat" not in updated
-    )
-    if not needs_section:
-        return updated if updated != text else None
-    heading = "## Prompt for Cursor"
-    start = updated.find(heading)
-    replacement = CURSOR_PROMPT_SECTION.strip() + "\n"
-    if start < 0:
-        updated = updated.rstrip() + "\n\n" + replacement
-    else:
-        rest = updated[start + len(heading) :]
-        import re
-
-        match = re.search(r"\n## ", rest)
-        end = start + len(heading) + match.start() if match else len(updated)
-        tail = updated[end:]
-        updated = updated[:start] + replacement + ("" if tail.startswith("\n") else "\n") + tail.lstrip("\n")
     if updated == text:
         return None
     return updated
