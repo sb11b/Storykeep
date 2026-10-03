@@ -28,6 +28,12 @@ _ASK_CURSOR_PROMPT_RE = re.compile(
     r"\b(?:prompt for (?:the\s+)?cursor|cursor agent prompt|cloud agent prompt)\s+(?:for|to)\b",
     re.I,
 )
+_ASK_CLINE_PROMPT_ONLY_RE = re.compile(
+    r"\bcline\s+(?:prompt|agent)\b|"
+    r"\bwrite\s+a\s+cline\s+prompt\b|"
+    r"\bcline\s+prompt\s+only\b",
+    re.I,
+)
 _TASK_VERB_RE = re.compile(
     r"\b(?:fix|implement|add|ensure|update|refactor|investigate|debug|deploy|complete|remove|change)\b",
     re.I,
@@ -109,6 +115,12 @@ Do not web-search, list chats, or wander into spec docs. Do not truncate or spli
 - No sentence before the opening fence.
 """
 
+CLINE_PROMPT_ONLY_APPEND = """
+Steve asked for a Cline prompt only. Reply with ONE fenced text block and nothing else.
+The block must include the goal, the named files, and every "Do not" line.
+Do not stop mid-sentence. Do not call a tool. Do not start Cursor.
+"""
+
 CURSOR_PROMPT_DETAILS_APPEND = """
 Steve already gave task details (typed or dictated). Fold every detail into the copy-paste block — do not replace or narrow his scope.
 """
@@ -144,6 +156,11 @@ def asks_for_cursor_prompt(message: str) -> bool:
         re.search(r"\b(?:prompt for (?:the\s+)?cursor|cursor prompt|cloud agent)\b", text, re.I)
     )
     return asks and cursor
+
+
+def is_cline_prompt_only_turn(message: str) -> bool:
+    """Steve wants a Cline prompt only — one fenced block, nothing else."""
+    return bool(_ASK_CLINE_PROMPT_ONLY_RE.search(message or ""))
 
 
 def cursor_prompt_has_task_details(message: str) -> bool:
@@ -665,6 +682,8 @@ def build_turn_extras(
         extras.append(CURSOR_PROMPT_APPEND)
         if cursor_prompt_has_task_details(user_text):
             extras.append(CURSOR_PROMPT_DETAILS_APPEND)
+        if is_cline_prompt_only_turn(user_text):
+            extras.append(CLINE_PROMPT_ONLY_APPEND)
     elif mode == "follow":
         extras.append(CURSOR_FOLLOW_APPEND)
     return extras
