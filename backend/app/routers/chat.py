@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime, timezone as dt_timezone
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -1196,6 +1197,10 @@ def _chat(
     search_enabled = search_tool.owner_can_search(user)
     will_search = search_enabled and search_tool.wants_web_search(user_text, history_for_xai)
     schedule_turn = search_enabled and search_tool.needs_schedule_answer(user_text, history_for_xai)
+    date_question = junior_model.is_date_question(user_text)
+    if date_question:
+        will_search = False
+        schedule_turn = False
     will_voices = tts_service.wants_voice_info(user_text)
     owner_ops = user is not None and not is_locked(user)
     railway_enabled = railway_tool.owner_can_use(user)
@@ -1624,6 +1629,25 @@ def _chat(
             if merge_repair_text:
                 await emit_delta(merge_repair_text)
                 yield chat_service.encode_sse({"delta": merge_repair_text, "stream_status": "writing"})
+                if persist and conversation_id:
+                    assistant_message_id = _persist_assistant("".join(assistant_parts))
+                    if assistant_message_id:
+                        yield chat_service.encode_sse(
+                            {
+                                "conversation_id": str(conversation_id),
+                                "assistant_message_id": assistant_message_id,
+                                "model": resolved_model,
+                                "model_choice": model_choice,
+                                "reasoning_effort": resolved_reasoning,
+                            }
+                        )
+                yield chat_service.encode_sse("[DONE]")
+                return
+            if date_question:
+                ny = datetime.now(dt_timezone("America/New_York"))
+                date_answer = ny.strftime("%A, %B %-d, %Y.")
+                await emit_delta(date_answer)
+                yield chat_service.encode_sse({"delta": date_answer, "stream_status": "writing"})
                 if persist and conversation_id:
                     assistant_message_id = _persist_assistant("".join(assistant_parts))
                     if assistant_message_id:

@@ -158,6 +158,19 @@ def cursor_prompt_has_task_details(message: str) -> bool:
     return bool(_TASK_VERB_RE.search(text) and len(text) >= 80)
 
 
+_DATE_QUESTION_RE = re.compile(
+    r"^(?:what\s*(?:'?s|\s+is)\s+(?:the\s+)?(?:current\s+)?(?:today'?s?\s+)?date|"
+    r"what\s+day\s+(?:is\s+it|today)|"
+    r"today'?s?\s+date|"
+    r"what\s*(?:'?s|\s+is)\s+(?:the\s+)?time)\s*[?]?\s*$",
+    re.I,
+)
+
+def is_date_question(message: str) -> bool:
+    """True when the user asks for the current date/time — answer from the server clock, do not web_search."""
+    return bool(_DATE_QUESTION_RE.search((message or "").strip()))
+
+
 def is_junior_feedback_turn(message: str) -> bool:
     return bool(_JUNIOR_FEEDBACK_RE.search(message or ""))
 
