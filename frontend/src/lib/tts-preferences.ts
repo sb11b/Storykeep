@@ -37,12 +37,12 @@ export function writeStoredTtsVoice(voiceId: string) {
 }
 
 export function readStoredTtsAutoRead(): boolean {
-  if (typeof window === "undefined") return true;
+  if (typeof window === "undefined") return false;
   try {
     const raw = window.localStorage.getItem(TTS_AUTO_READ_KEY);
-    return raw === null ? true : raw === "true";
+    return raw === null ? false : raw === "true";
   } catch {
-    return true;
+    return false;
   }
 }
 
