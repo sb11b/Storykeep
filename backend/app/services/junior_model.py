@@ -29,7 +29,6 @@ _ASK_CURSOR_PROMPT_RE = re.compile(
     re.I,
 )
 _ASK_CLINE_PROMPT_ONLY_RE = re.compile(
-    r"\bcline\s+prompt\b|"
     r"\bwrite\s+a\s+cline\s+prompt\b|"
     r"\bcline\s+prompt\s+only\b",
     re.I,
