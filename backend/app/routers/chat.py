@@ -2061,7 +2061,41 @@ def _chat(
                     _persist_assistant("".join(assistant_parts))
                     return
             if not saw_text:
-                note = chat_service.EMPTY_REPLY_FALLBACK
+                tool_calls_out.clear()
+                async for piece in _stream_xai(None, None):
+                    if piece is chat_service.STREAM_HEARTBEAT:
+                        yield chat_service.SSE_PADDING
+                        yield chat_service.encode_sse(
+                            {
+                                "heartbeat": True,
+                                "stream_status": "thinking" if not saw_text else "writing",
+                            }
+                        )
+                        await asyncio.sleep(0)
+                        continue
+                    if cancelled.is_set() or await request.is_disconnected():
+                        cancelled.set()
+                        if isinstance(piece, str) and piece:
+                            assistant_parts.append(piece)
+                        _persist_assistant("".join(assistant_parts))
+                        return
+                    if not piece:
+                        if not saw_text:
+                            yield chat_service.encode_sse({"stream_status": "thinking"})
+                            await asyncio.sleep(0)
+                        continue
+                    first = not saw_text
+                    await emit_delta(piece)
+                    delta_event: dict[str, object] = {"delta": piece}
+                    if first:
+                        delta_event["stream_status"] = "writing"
+                    yield chat_service.encode_sse(delta_event)
+                    await asyncio.sleep(0)
+                if cancelled.is_set() or await request.is_disconnected():
+                    _persist_assistant("".join(assistant_parts))
+                    return
+            if not saw_text:
+                note = "The call failed."
                 await emit_delta(note)
                 yield chat_service.encode_sse({"delta": note, "stream_status": "writing"})
             if persist and conversation_id:
@@ -2088,7 +2122,7 @@ def _chat(
             if not partial_text.strip() and chat_service.is_recoverable_empty_reply(
                 status_code, detail
             ):
-                note = chat_service.EMPTY_REPLY_FALLBACK
+                note = "The call failed."
                 assistant_parts.append(note)
                 await emit_delta(note)
                 yield chat_service.encode_sse({"delta": note, "stream_status": "writing"})
