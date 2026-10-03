@@ -80,7 +80,15 @@ import { grokModelLabel, GROK_REASONING_EFFORTS, isGrokReasoningEffort, spendChi
 import { postedSpendForTurn } from "@/lib/grok-auto-route";
 import { hasMediaImage, imageToolIntent, MEDIA_MARKDOWN, thisTurnImageMediaIds } from "@/lib/chat-image";
 import { DEFAULT_TTS_VOICE_ID, fallbackTtsVoices, resolveTtsVoiceId } from "@/lib/tts-defaults";
-import { readStoredTtsSpeed, readStoredTtsVoice, TTS_SPEEDS, writeStoredTtsSpeed, writeStoredTtsVoice } from "@/lib/tts-preferences";
+import {
+  readStoredTtsSpeed,
+  readStoredTtsVoice,
+  TTS_SPEEDS,
+  writeStoredTtsSpeed,
+  writeStoredTtsVoice,
+  readStoredTtsAutoRead,
+  writeStoredTtsAutoRead,
+} from "@/lib/tts-preferences";
 import { MIC_LIVE, MIC_STT_EMPTY_HINT, MIC_TRANSCRIBING } from "@/lib/stt-ui";
 import type { Folder, TtsVoice } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -288,6 +296,7 @@ export function GrokPane({
   const [playbackSpeed, setPlaybackSpeed] = useState(() => readStoredTtsSpeed());
   const [listenTarget, setListenTarget] = useState<ListenTarget | null>(null);
   const [activeWord, setActiveWord] = useState<number | null>(null);
+  const [autoReadReplies, setAutoReadReplies] = useState(() => readStoredTtsAutoRead());
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [sttPhase, setSttPhase] = useState<JuniorMicPhase>("idle");
   const [micMode, setMicMode] = useState<JuniorMicMode | null>(null);
@@ -678,6 +687,12 @@ export function GrokPane({
   /** Same path as Listen, triggered when an assistant reply finishes streaming. */
   function requestAutoListen(messageId: string, markdown: string) {
     if (!ttsEnabled || locked || panelOpenRef.current === false) return;
+    if (!autoReadReplies) {
+      if (listen.isActive) {
+        listen.stop();
+      }
+      return;
+    }
     if (userStoppedTtsRef.current) return;
     if (sttPhaseRef.current !== "idle") {
       pendingAutoListenRef.current = { id: messageId, markdown };
@@ -2742,6 +2757,22 @@ export function GrokPane({
                 }}
               />
               Include note…
+            </label>
+            <label className="inline-flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={autoReadReplies}
+                disabled={!ttsEnabled || locked}
+                onChange={(event) => {
+                  const on = event.target.checked;
+                  setAutoReadReplies(on);
+                  writeStoredTtsAutoRead(on);
+                  if (!on && listen.isActive) {
+                    listen.stop();
+                  }
+                }}
+              />
+              Read replies
             </label>
             {pane.workingNoteTitle ? (
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5">
