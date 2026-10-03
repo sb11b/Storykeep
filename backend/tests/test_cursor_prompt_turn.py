@@ -33,6 +33,28 @@ class CursorPromptTurnTests(unittest.TestCase):
         )
         self.assertEqual(junior_model.cursor_turn_mode(typed), "follow")
 
+    def test_generate_prompt_append_contains_fence_rules(self):
+        msg = "write a prompt for cursor to fix login"
+        extras = junior_model.build_turn_extras(
+            msg,
+            memory_block=None,
+            chats_enabled=False,
+            index_block=None,
+            read_meta=None,
+            unread_catalog=None,
+            calendar_connected=False,
+            calendar_tools=False,
+            mail_connected=False,
+            mail_unread=False,
+            unread_mail_md=None,
+            search_enabled=False,
+            will_search=False,
+        )
+        joined = "\n".join(extras)
+        self.assertIn("one fenced block", joined)
+        self.assertIn("fence is not empty", joined)
+        self.assertIn("before the opening", joined)
+
     def test_generate_with_embedded_details_gets_details_append(self):
         msg = "write a prompt for cursor: fix login in auth.py and add JWT refresh tests"
         extras = junior_model.build_turn_extras(

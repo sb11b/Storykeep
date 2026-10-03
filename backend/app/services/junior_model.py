@@ -104,6 +104,9 @@ CURSOR_PROMPT_APPEND = """
 Steve asked you to write a Cursor / Cloud Agent prompt. Reply with ONE complete copy-paste block he can drop into Cursor.
 Include: goal, repo or file context, constraints, files or areas to touch, and clear done-when criteria.
 Do not web-search, list chats, or wander into spec docs. Do not truncate or split across turns.
+- The whole reply is one fenced block.
+- The fence is not empty. The whole request is the body of the fence.
+- No sentence before the opening fence.
 """
 
 CURSOR_PROMPT_DETAILS_APPEND = """
