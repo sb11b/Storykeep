@@ -99,7 +99,6 @@ fun HomeScreen(
             Button(
                 onClick = {
                     session.selectTab(BottomTab.Talk)
-                    onTalk()
                 },
                 modifier = Modifier
                     .fillMaxWidth()
