@@ -697,9 +697,12 @@ async def chat(
         raise HTTPException(status_code=413, detail=chat_service.SEND_THREAD_TOO_LARGE) from None
     except Exception as exc:
         log_chat_exception("chat failed", user=getattr(user, "id", None))
+        msg = str(exc)
+        if len(msg) > 200:
+            msg = msg[:200] + "..."
         raise HTTPException(
             status_code=500,
-            detail=f"Chat failed ({exc.__class__.__name__}).",
+            detail=f"Chat failed ({exc.__class__.__name__}): {msg}",
         ) from None
 
 
