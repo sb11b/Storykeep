@@ -382,8 +382,11 @@ def get_cline_pending_reply(message: str) -> str | None:
         # Skip the "Approve or Deny" instruction line
         if "approve" in lower and "deny" in lower:
             continue
-        # Skip "Cline pending" header line(s)
-        if lower.startswith("cline") or "pending" in lower:
+        # Skip real Cline pending header lines
+        if _CLINE_PENDING_RE.match(stripped):
+            continue
+        # Skip "On branch ..." lines (they are not commands)
+        if re.search(r"^On branch", stripped, re.I):
             continue
         # Any remaining non-empty line is a command
         command_count += 1
