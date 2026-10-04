@@ -196,6 +196,24 @@ class JuniorModelTests(unittest.TestCase):
         )
         self.assertIsNone(junior_model.fast_forward_reply(paste))
 
+    def test_fast_forward_crlf_line_ending_still_matches(self):
+        """CRLF line endings must not prevent matching the 'On branch' line."""
+        paste = (
+            "On branch cursor/foo\r\n"
+            "Not possible to fast-forward, aborting.\r\n"
+        )
+        reply = junior_model.fast_forward_reply(paste)
+        self.assertIsNotNone(reply)
+        self.assertIn("git checkout cursor/foo", reply)
+        # Also verify with plain LF still works
+        paste_lf = (
+            "On branch cursor/foo\n"
+            "Not possible to fast-forward, aborting.\n"
+        )
+        reply_lf = junior_model.fast_forward_reply(paste_lf)
+        self.assertIsNotNone(reply_lf)
+        self.assertIn("git checkout cursor/foo", reply_lf)
+
     def test_build_turn_extras_includes_capabilities(self):
         extras = junior_model.build_turn_extras(
             "what can you do from this chat",

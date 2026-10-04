@@ -54,7 +54,7 @@ _ANDROID_PROJECT_RE = re.compile(
 )
 
 def fast_forward_reply(message: str) -> str | None:
-    text = message or ""
+    text = (message or "").replace("\r", "")
     if "Not possible to fast-forward" not in text:
         return None
     branches = re.findall(r"^On branch[ \t]+([A-Za-z0-9._/-]+)$", text, re.MULTILINE)
