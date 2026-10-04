@@ -322,23 +322,30 @@ def responses_url() -> str:
     return "https://api.x.ai/v1/responses"
 
 
+def _canopy_enabled() -> bool:
+    return bool((settings.canopy_base_url or "").strip())
+
+
 def key_format_ok() -> bool:
+    if _canopy_enabled():
+        key = (settings.canopy_api_key or "").strip()
+        return bool(key)
     key = (settings.xai_api_key or "").strip()
     return bool(key) and key.startswith("xai-")
 
 
 def key_configured() -> bool:
+    if _canopy_enabled():
+        return bool((settings.canopy_api_key or "").strip())
     key = (settings.xai_api_key or "").strip()
     if not key:
         return False
-    if (settings.canopy_base_url or "").strip():
-        return True
     return key.startswith("xai-")
 
 
 def rewrite_xai_model(model: str) -> str:
     """Map retired aliases to a live chat id. Dead ids hang until a proxy 504."""
-    if (settings.canopy_base_url or "").strip():
+    if _canopy_enabled():
         canopy = (settings.canopy_model_name or "").strip()
         if canopy:
             return canopy
@@ -707,13 +714,21 @@ def parse_xai_error_body(raw: str, status_code: int) -> str:
 
 
 def require_key() -> str:
+    if _canopy_enabled():
+        key = (settings.canopy_api_key or "").strip()
+        if not key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Chat is off until CANOPY_API_KEY is set on the server (Railway variables).",
+            )
+        return key
     key = (settings.xai_api_key or "").strip()
     if not key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Chat is off until XAI_API_KEY is set on the server (Railway variables).",
         )
-    if not key.startswith("xai-") and not (settings.canopy_base_url or "").strip():
+    if not key.startswith("xai-"):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="XAI_API_KEY must start with xai- (check Railway variables).",

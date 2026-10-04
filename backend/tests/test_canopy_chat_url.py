@@ -23,9 +23,27 @@ def test_canopy_chat_url_and_model_when_set():
 
     # key_configured treats Canopy keys as valid when base URL is set
     with patch.object(chat_service.settings, "xai_api_key", "sk-other"):
+        with patch.object(chat_service.settings, "canopy_api_key", ""):
+            with patch.object(chat_service.settings, "canopy_base_url", ""):
+                assert not chat_service.key_configured()
+            with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
+                assert not chat_service.key_configured()
+        with patch.object(chat_service.settings, "canopy_api_key", "canopy-secret"):
+            with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
+                assert chat_service.key_configured()
+
+    # When canopy_base_url is empty, xai_api_key is used
+    with patch.object(chat_service.settings, "xai_api_key", "xai-valid"):
         with patch.object(chat_service.settings, "canopy_base_url", ""):
-            assert not chat_service.key_configured()
+            assert chat_service.key_configured()
+            assert chat_service.require_key() == "xai-valid"
+            assert chat_service.key_format_ok()
+
+    # When canopy_base_url is set, canopy_api_key is used
+    with patch.object(chat_service.settings, "canopy_api_key", "canopy-secret"):
         with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
             assert chat_service.key_configured()
+            assert chat_service.require_key() == "canopy-secret"
+            assert chat_service.key_format_ok()
 
     # Unset at end (patcher context managers handle it)
