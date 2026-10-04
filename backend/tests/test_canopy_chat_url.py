@@ -89,4 +89,20 @@ def test_canopy_chat_url_and_model_when_set():
         "Text<|tool_call_begin|>{'q': 'x'}<|tool_call_end|>More"
     ) == "TextMore"
 
+
     # Unset at end (patcher context managers handle it)
+
+def test_strip_printed_kimi_leak():
+    from app.services import chat as chat_service
+    leaked = (
+        "The third screen is Stories.</think>"
+        "For the Dodgers score, let me look that up."
+        "<|tool_calls_section_begin|>"
+        "<|tool_call_begin|>functions.web_search:0"
+        "<|tool_call_argument_begin|>"
+        '{"query": "Dodgers game yesterday score October 3 2026"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+    assert chat_service._strip_canopy_tool_markup(leaked) == "The third screen is Stories.For the Dodgers score, let me look that up."
+

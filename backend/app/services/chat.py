@@ -1642,6 +1642,8 @@ async def stream_completion(
                             yield ""
                             continue
                     if text:
+                        if _canopy_enabled():
+                            text = _strip_canopy_tool_markup(text)
                         yield text
                 if first_token_at is None:
                     _xai_ttft_log(
@@ -1879,8 +1881,13 @@ def complete_once(
 
 
 def _strip_canopy_tool_markup(text: str) -> str:
-    """Remove Kimi tool-use markup from Canopy replies."""
-    stripped = re.sub(r"<\|tool_call_begin\|>.*?<\|tool_call_end\|>", "", text, flags=re.DOTALL)
+    """Remove the Kimi think and tool-section tokens Junior printed."""
+    stripped = text or ""
+    stripped = re.sub(r"<think>.*?</think>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"</think>", "", stripped)
+    stripped = re.sub(r"<\|tool_calls_section_begin\|>.*?<\|tool_calls_section_end\|>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"<\|tool_call_begin\|>.*?<\|tool_call_end\|>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"<\|tool_calls_section_begin\|>.*", "", stripped, flags=re.DOTALL)
     stripped = re.sub(r"<\|tool_call_begin\|>.*", "", stripped, flags=re.DOTALL)
     return stripped.strip()
 
