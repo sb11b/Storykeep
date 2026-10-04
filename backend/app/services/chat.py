@@ -328,7 +328,12 @@ def key_format_ok() -> bool:
 
 
 def key_configured() -> bool:
-    return key_format_ok()
+    key = (settings.xai_api_key or "").strip()
+    if not key:
+        return False
+    if (settings.canopy_base_url or "").strip():
+        return True
+    return key.startswith("xai-")
 
 
 def rewrite_xai_model(model: str) -> str:

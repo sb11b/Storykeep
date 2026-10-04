@@ -21,4 +21,11 @@ def test_canopy_chat_url_and_model_when_set():
         with patch.object(chat_service.settings, "canopy_model_name", "brain-1"):
             assert chat_service.rewrite_xai_model("grok-4.6") == "grok-4.6"
 
+    # key_configured treats Canopy keys as valid when base URL is set
+    with patch.object(chat_service.settings, "xai_api_key", "sk-other"):
+        with patch.object(chat_service.settings, "canopy_base_url", ""):
+            assert not chat_service.key_configured()
+        with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
+            assert chat_service.key_configured()
+
     # Unset at end (patcher context managers handle it)
