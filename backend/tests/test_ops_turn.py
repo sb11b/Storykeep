@@ -216,6 +216,58 @@ class OpsTurnTests(unittest.TestCase):
         # It must still be an ops turn.
         self.assertTrue(junior_model.is_ops_turn(msg))
 
+    def test_is_cline_pending_command_detects_command_paste(self):
+        self.assertTrue(junior_model.is_cline_pending_command("Cline pending\ngit add -A"))
+        self.assertTrue(junior_model.is_cline_pending_command("Approve or Deny\ngit status"))
+        self.assertTrue(junior_model.is_cline_pending_command("Cline pending\ndir /s"))
+        self.assertFalse(junior_model.is_cline_pending_command("Cline pending"))
+        self.assertFalse(junior_model.is_cline_pending_command("git status"))
+        self.assertFalse(junior_model.is_cline_pending_command("Approve or Deny"))
+
+    def test_cline_pending_reply_git_add_dash_a_starts_with_deny(self):
+        msg = "Cline pending\ngit add -A"
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_cline_pending_reply_git_status_starts_with_approve(self):
+        msg = "Cline pending\ngit status"
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Approve"))
+
+    def test_cline_pending_reply_dir_s_starts_with_deny(self):
+        msg = "Cline pending\ndir /s"
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_build_turn_extras_cline_pending_includes_append(self):
+        extras = junior_model.build_turn_extras(
+            "Cline pending\ngit add -A",
+            memory_block=None,
+            chats_enabled=False,
+            index_block=None,
+            read_meta=None,
+            unread_catalog=None,
+            calendar_connected=False,
+            calendar_tools=False,
+            mail_connected=False,
+            mail_unread=False,
+            unread_mail_md=None,
+            search_enabled=False,
+            will_search=False,
+        )
+        joined = "\n".join(extras)
+        self.assertIn("Cline Pending command", joined)
+        self.assertIn("Approve or Deny", joined)
+
+    def test_pick_xhigh_for_auto_false_cline_pending_command(self):
+        from app.services import chat as chat_service
+        msg = "Cline pending\ngit add -A"
+        self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
+        self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
+
 
 if __name__ == "__main__":
     unittest.main()

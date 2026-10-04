@@ -509,6 +509,8 @@ def pick_xhigh_for_auto(message: str, history: list[dict[str, str]] | None = Non
         or cursor_agent_tool.wsl_switch_reply(text)
     ):
         return False
+    if junior_model.is_cline_operator_message(text):
+        return False
     if (
         junior_model.asks_for_cursor_prompt(text)
         or cursor_agent_tool.is_cursor_start_negated(text)

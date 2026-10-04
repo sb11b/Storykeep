@@ -138,6 +138,17 @@ The block must include the goal, the named files, and every "Do not" line.
 Do not stop mid-sentence. Do not call a tool.
 """
 
+CLINE_PENDING_APPEND = """
+Steve pasted a Cline Pending command. Reply in exactly three lines:
+1) Approve or Deny.
+2) One sentence.
+3) The next command in a fenced code block.
+Do not add any other text, preface, or tool call.
+Approved commands: git status, git diff, git diff --stat, git log -3, pytest, git checkout -b, git add of named backend files, git commit, git push github HEAD.
+Denied commands: git add -A, git push main, git push github main, git init, pip install, dir /s, Get-ChildItem -Recurse, cd Storykeeper.
+If the command is not on either list, Deny and the next command is git status.
+"""
+
 CURSOR_PROMPT_DETAILS_APPEND = """
 Steve already gave task details (typed or dictated). Fold every detail into the copy-paste block — do not replace or narrow his scope.
 """
@@ -273,6 +284,31 @@ _CLINE_OPERATOR_RE = re.compile(
     re.I,
 )
 
+# Commands Cline is allowed to run without explicit approval.
+_CLINE_APPROVED_COMMANDS = [
+    "git status",
+    "git diff",
+    "git diff --stat",
+    "git log -3",
+    "pytest",
+    "git checkout -b",
+    "git add",
+    "git commit",
+    "git push github HEAD",
+]
+
+# Commands Cline must never run.
+_CLINE_DENIED_COMMANDS = [
+    "git add -A",
+    "git push main",
+    "git push github main",
+    "git init",
+    "pip install",
+    "dir /s",
+    "Get-ChildItem -Recurse",
+    "cd Storykeeper",
+]
+
 
 def is_cline_operator_message(message: str) -> bool:
     """Cline operator status messages are not GitHub/Railway ops or delegate turns."""
@@ -280,6 +316,66 @@ def is_cline_operator_message(message: str) -> bool:
     if not text:
         return False
     return bool(_CLINE_OPERATOR_RE.search(text))
+
+
+def is_cline_pending_command(message: str) -> bool:
+    """True when the message is a Cline pending paste that contains a command to approve or deny."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    if not is_cline_operator_message(text):
+        return False
+    # Must contain a command-like pattern (starts with git, pip, dir, Get-ChildItem, cd, pytest)
+    return bool(re.search(r"(^|\n)(git |pip |dir |Get-ChildItem |cd |pytest)", text, re.I | re.M))
+
+
+def get_cline_pending_reply(message: str) -> str | None:
+    """Return the forced reply for a Cline pending command, or None if not a Cline pending command."""
+    text = (message or "").strip()
+    if not is_cline_pending_command(text):
+        return None
+
+    # Extract the command from the message
+    lines = text.splitlines()
+    command = ""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        lower = stripped.lower()
+        if lower.startswith(("git ", "pip ", "dir ", "get-childitem ", "cd ", "pytest")):
+            command = stripped
+            break
+
+    if not command:
+        return None
+
+    # Check if the command is in the denied list (exact match or starts with)
+    for denied in _CLINE_DENIED_COMMANDS:
+        if command == denied or command.startswith(denied + " "):
+            next_cmd = "git status"
+            return (
+                f"Deny\n"
+                f"This command is not on the approved list.\n"
+                f"```{next_cmd}```"
+            )
+
+    # Check if the command is in the approved list (exact match or starts with)
+    for approved in _CLINE_APPROVED_COMMANDS:
+        if command == approved or command.startswith(approved + " "):
+            return (
+                f"Approve\n"
+                f"This command is on the approved list.\n"
+                f"```{command}```"
+            )
+
+    # Not on either list: Deny and default to git status
+    next_cmd = "git status"
+    return (
+        f"Deny\n"
+        f"This command is not on the approved list.\n"
+        f"```{next_cmd}```"
+    )
 
 
 # Detect pasted git status, git log, or Railway deploy log output.
@@ -747,4 +843,6 @@ def build_turn_extras(
         extras.append(CURSOR_FOLLOW_APPEND)
     if is_cline_prompt_only_turn(user_text):
         extras.append(CLINE_PROMPT_ONLY_APPEND)
+    if is_cline_pending_command(user_text):
+        extras.append(CLINE_PENDING_APPEND)
     return extras
