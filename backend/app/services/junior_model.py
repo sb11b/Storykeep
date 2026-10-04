@@ -369,7 +369,8 @@ def get_cline_pending_reply(message: str) -> str | None:
     if not is_cline_pending_command(text):
         return None
 
-    # Extract the command from the message (first command-like line)
+    # After the Cline pending header, allow one command line.
+    # Any other non-empty line that is not the instruction is a second command.
     lines = text.splitlines()
     command = ""
     command_count = 0
@@ -378,11 +379,16 @@ def get_cline_pending_reply(message: str) -> str | None:
         if not stripped:
             continue
         lower = stripped.lower()
-        if lower.startswith(("git ", "pip ", "dir ", "get-childitem ", "cd ", "pytest")):
-            command_count += 1
-            if command_count == 1:
-                command = stripped
-            # Continue counting; we'll check after the loop
+        # Skip the "Approve or Deny" instruction line
+        if "approve" in lower and "deny" in lower:
+            continue
+        # Skip "Cline pending" header line(s)
+        if lower.startswith("cline") or "pending" in lower:
+            continue
+        # Any remaining non-empty line is a command
+        command_count += 1
+        if command_count == 1:
+            command = stripped
 
     if command_count > 1:
         return "Deny\nThis command is not on the approved list.\n```git status```"

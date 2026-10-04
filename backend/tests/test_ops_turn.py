@@ -366,6 +366,14 @@ class OpsTurnTests(unittest.TestCase):
         self.assertIsNotNone(reply)
         self.assertTrue(reply.startswith("Deny"))
 
+    def test_cline_pending_pwsh_second_command_deny(self):
+        # Deny if paste contains pwsh as a second command line
+        reply = junior_model.get_cline_pending_reply(
+            'Cline pending\ngit status\npwsh -Command "git push github main"'
+        )
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Deny"))
+
 
 if __name__ == "__main__":
     unittest.main()
