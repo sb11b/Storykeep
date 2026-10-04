@@ -1688,6 +1688,25 @@ def _chat(
                         )
                 yield chat_service.encode_sse("[DONE]")
                 return
+            # Short-circuit Cline pending commands before prefetching anything.
+            cline_pending_reply = junior_model.get_cline_pending_reply(user_text)
+            if cline_pending_reply is not None:
+                await emit_delta(cline_pending_reply)
+                yield chat_service.encode_sse({"delta": cline_pending_reply, "stream_status": "writing"})
+                if persist and conversation_id:
+                    assistant_message_id = _persist_assistant("".join(assistant_parts))
+                    if assistant_message_id:
+                        yield chat_service.encode_sse(
+                            {
+                                "conversation_id": str(conversation_id),
+                                "assistant_message_id": assistant_message_id,
+                                "model": resolved_model,
+                                "model_choice": model_choice,
+                                "reasoning_effort": resolved_reasoning,
+                            }
+                        )
+                yield chat_service.encode_sse("[DONE]")
+                return
             if will_cursor_start:
                 task_prompt = cursor_agent_tool.sequenced_task(user_text) or ""
                 agent_source = task_prompt or user_text

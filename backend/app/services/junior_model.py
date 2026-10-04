@@ -138,6 +138,17 @@ The block must include the goal, the named files, and every "Do not" line.
 Do not stop mid-sentence. Do not call a tool.
 """
 
+CLINE_PENDING_APPEND = """
+Steve pasted a Cline Pending command. Reply in exactly three lines:
+1) Approve or Deny.
+2) One sentence.
+3) The next command in a fenced code block.
+Do not add any other text, preface, or tool call.
+Approved commands: git status, git diff, git diff --stat, git log -3, pytest, git checkout -b, git add of named backend files, git commit, git push github HEAD.
+Denied commands: git add -A, git push main, git push github main, git init, pip install, dir /s, Get-ChildItem -Recurse, cd Storykeeper.
+If the command is not on either list, Deny and the next command is git status.
+"""
+
 CURSOR_PROMPT_DETAILS_APPEND = """
 Steve already gave task details (typed or dictated). Fold every detail into the copy-paste block — do not replace or narrow his scope.
 """
@@ -273,6 +284,41 @@ _CLINE_OPERATOR_RE = re.compile(
     re.I,
 )
 
+# Match the operator keyword on a line by itself, or indented after "Cline pending:"
+_CLINE_PENDING_RE = re.compile(
+    r"^Cline\s+pending[:]?\s*$|"
+    r"^Approve\s+or\s+Deny\s*$",
+    re.I | re.M,
+)
+
+# Deny if command contains shell metacharacters or a newline.
+_CLINE_DENIED_CHARS_RE = re.compile(r"[;&|]|\n")
+
+# Commands Cline is allowed to run without explicit approval.
+_CLINE_APPROVED_COMMANDS = [
+    "git status",
+    "git diff",
+    "git diff --stat",
+    "git log -3",
+    "pytest",
+    "git checkout -b",
+    "git add",
+    "git commit",
+    "git push github HEAD",
+]
+
+# Commands Cline must never run.
+_CLINE_DENIED_COMMANDS = [
+    "git add -A",
+    "git push main",
+    "git push github main",
+    "git init",
+    "pip install",
+    "dir /s",
+    "Get-ChildItem -Recurse",
+    "cd Storykeeper",
+]
+
 
 def is_cline_operator_message(message: str) -> bool:
     """Cline operator status messages are not GitHub/Railway ops or delegate turns."""
@@ -280,6 +326,119 @@ def is_cline_operator_message(message: str) -> bool:
     if not text:
         return False
     return bool(_CLINE_OPERATOR_RE.search(text))
+
+
+def is_cline_pending_command(message: str) -> bool:
+    """True when the message is a Cline pending paste that contains a command to approve or deny."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    if not is_cline_operator_message(text):
+        return False
+    # Must contain a command-like pattern (starts with git, pip, dir, Get-ChildItem, cd, pytest)
+    # Match either at line start or after "Cline pending:" header, allowing for indentation
+    return bool(re.search(r"(^|\n)\s*(git |pip |dir |Get-ChildItem |cd |pytest)", text, re.I | re.M))
+
+
+def _is_safe_git_add(command: str) -> bool:
+    """True only for git add of named backend/ paths (no -A, ., or --all)."""
+    if not command.startswith("git add "):
+        return False
+    rest = command[len("git add "):]
+    # Deny git add -A, git add ., git add --all, git add *.py, etc.
+    if rest.strip() in ("-A", ".", "--all") or rest.startswith(("-A ", ". ", "--all ")):
+        return False
+    if rest.strip().startswith("-"):
+        return False
+    # Only allow named backend/ paths
+    parts = rest.strip().split()
+    if not parts:
+        return False
+    for part in parts:
+        if not part.startswith("backend/"):
+            return False
+        # Deny paths with .. or glob/wildcard characters
+        if ".." in part or "*" in part or "?" in part or "[" in part:
+            return False
+    return True
+
+
+def get_cline_pending_reply(message: str) -> str | None:
+    """Return the forced reply for a Cline pending command, or None if not a Cline pending command."""
+    text = (message or "").strip()
+    if not is_cline_pending_command(text):
+        return None
+
+    # After the Cline pending header, allow one command line.
+    # Any other non-empty line that is not the instruction is a second command.
+    lines = text.splitlines()
+    command = ""
+    command_count = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        lower = stripped.lower()
+        # Skip the "Approve or Deny" instruction line
+        if "approve" in lower and "deny" in lower:
+            continue
+        # Skip real Cline pending header lines
+        if _CLINE_PENDING_RE.match(stripped):
+            continue
+        # Skip "On branch ..." lines (they are not commands)
+        if re.search(r"^On branch", stripped, re.I):
+            continue
+        # Any remaining non-empty line is a command
+        command_count += 1
+        if command_count == 1:
+            command = stripped
+
+    if command_count > 1:
+        return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    if not command:
+        return None
+
+    # Deny if command contains shell metacharacters or newline
+    if _CLINE_DENIED_CHARS_RE.search(command):
+        return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Deny specific commands
+    lower_cmd = command.lower()
+
+    # Deny git add -A, git add ., git add --all
+    if lower_cmd.startswith("git add ") and not _is_safe_git_add(command):
+        return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Deny git push main or git push github main
+    if lower_cmd in ("git push main", "git push github main"):
+        return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Deny git push github HEAD unless the paste shows a cursor/ branch
+    # and does not show a main branch
+    if lower_cmd == "git push github head":
+        has_cursor_branch = bool(re.search(r"^On branch cursor\/", text, re.I | re.M))
+        has_main_branch = bool(re.search(r"^On branch main", text, re.I | re.M))
+        if not has_cursor_branch or has_main_branch:
+            return "Deny\nThis command is not on the approved list.\n```git status```"
+        if not re.search(r"cursor\/", text, re.I):
+            return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Check denied list (exact match or starts with)
+    for denied in _CLINE_DENIED_COMMANDS:
+        if command == denied or command.startswith(denied + " "):
+            return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Check approved list (exact match or starts with)
+    for approved in _CLINE_APPROVED_COMMANDS:
+        if command == approved or command.startswith(approved + " "):
+            # git add requires named backend/ paths (checked above)
+            if lower_cmd.startswith("git add ") and not _is_safe_git_add(command):
+                return "Deny\nThis command is not on the approved list.\n```git status```"
+            return f"Approve\nThis command is on the approved list.\n```{command}```"
+
+    # Not on either list: Deny and default to git status
+    return "Deny\nThis command is not on the approved list.\n```git status```"
 
 
 # Detect pasted git status, git log, or Railway deploy log output.
@@ -747,4 +906,6 @@ def build_turn_extras(
         extras.append(CURSOR_FOLLOW_APPEND)
     if is_cline_prompt_only_turn(user_text):
         extras.append(CLINE_PROMPT_ONLY_APPEND)
+    if is_cline_pending_command(user_text):
+        extras.append(CLINE_PENDING_APPEND)
     return extras
