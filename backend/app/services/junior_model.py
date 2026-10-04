@@ -284,6 +284,16 @@ _CLINE_OPERATOR_RE = re.compile(
     re.I,
 )
 
+# Match the operator keyword on a line by itself, or indented after "Cline pending:"
+_CLINE_PENDING_RE = re.compile(
+    r"^Cline\s+pending[:]?\s*$|"
+    r"^Approve\s+or\s+Deny\s*$",
+    re.I | re.M,
+)
+
+# Deny if command contains shell metacharacters or a newline.
+_CLINE_DENIED_CHARS_RE = re.compile(r"[;&|]|\n")
+
 # Commands Cline is allowed to run without explicit approval.
 _CLINE_APPROVED_COMMANDS = [
     "git status",
@@ -326,7 +336,28 @@ def is_cline_pending_command(message: str) -> bool:
     if not is_cline_operator_message(text):
         return False
     # Must contain a command-like pattern (starts with git, pip, dir, Get-ChildItem, cd, pytest)
-    return bool(re.search(r"(^|\n)(git |pip |dir |Get-ChildItem |cd |pytest)", text, re.I | re.M))
+    # Match either at line start or after "Cline pending:" header, allowing for indentation
+    return bool(re.search(r"(^|\n)\s*(git |pip |dir |Get-ChildItem |cd |pytest)", text, re.I | re.M))
+
+
+def _is_safe_git_add(command: str) -> bool:
+    """True only for git add of named backend/ paths (no -A, ., or --all)."""
+    if not command.startswith("git add "):
+        return False
+    rest = command[len("git add "):]
+    # Deny git add -A, git add ., git add --all, git add *.py, etc.
+    if rest.strip() in ("-A", ".", "--all") or rest.startswith(("-A ", ". ", "--all ")):
+        return False
+    if rest.strip().startswith("-"):
+        return False
+    # Only allow named backend/ paths
+    parts = rest.strip().split()
+    if not parts:
+        return False
+    for part in parts:
+        if not part.startswith("backend/"):
+            return False
+    return True
 
 
 def get_cline_pending_reply(message: str) -> str | None:
@@ -335,7 +366,7 @@ def get_cline_pending_reply(message: str) -> str | None:
     if not is_cline_pending_command(text):
         return None
 
-    # Extract the command from the message
+    # Extract the command from the message (first command-like line)
     lines = text.splitlines()
     command = ""
     for line in lines:
@@ -350,32 +381,41 @@ def get_cline_pending_reply(message: str) -> str | None:
     if not command:
         return None
 
-    # Check if the command is in the denied list (exact match or starts with)
+    # Deny if command contains shell metacharacters or newline
+    if _CLINE_DENIED_CHARS_RE.search(command):
+        return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Deny specific commands
+    lower_cmd = command.lower()
+
+    # Deny git add -A, git add ., git add --all
+    if lower_cmd.startswith("git add ") and not _is_safe_git_add(command):
+        return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Deny git push main or git push github main
+    if lower_cmd in ("git push main", "git push github main"):
+        return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Deny git push github HEAD unless the paste shows a cursor/ branch
+    if lower_cmd == "git push github head":
+        if not re.search(r"cursor\/", text, re.I):
+            return "Deny\nThis command is not on the approved list.\n```git status```"
+
+    # Check denied list (exact match or starts with)
     for denied in _CLINE_DENIED_COMMANDS:
         if command == denied or command.startswith(denied + " "):
-            next_cmd = "git status"
-            return (
-                f"Deny\n"
-                f"This command is not on the approved list.\n"
-                f"```{next_cmd}```"
-            )
+            return "Deny\nThis command is not on the approved list.\n```git status```"
 
-    # Check if the command is in the approved list (exact match or starts with)
+    # Check approved list (exact match or starts with)
     for approved in _CLINE_APPROVED_COMMANDS:
         if command == approved or command.startswith(approved + " "):
-            return (
-                f"Approve\n"
-                f"This command is on the approved list.\n"
-                f"```{command}```"
-            )
+            # git add requires named backend/ paths (checked above)
+            if lower_cmd.startswith("git add ") and not _is_safe_git_add(command):
+                return "Deny\nThis command is not on the approved list.\n```git status```"
+            return f"Approve\nThis command is on the approved list.\n```{command}```"
 
     # Not on either list: Deny and default to git status
-    next_cmd = "git status"
-    return (
-        f"Deny\n"
-        f"This command is not on the approved list.\n"
-        f"```{next_cmd}```"
-    )
+    return "Deny\nThis command is not on the approved list.\n```git status```"
 
 
 # Detect pasted git status, git log, or Railway deploy log output.

@@ -268,6 +268,69 @@ class OpsTurnTests(unittest.TestCase):
         self.assertFalse(chat_service.pick_xhigh_for_auto(msg))
         self.assertEqual(chat_service.resolve_reasoning_for_request(chat_service.MODEL_AUTO, "auto", msg, []), "low")
 
+    def test_cline_pending_reply_contains_shell_metachar_deny(self):
+        # Deny if command contains &&, ;, |, or newline
+        self.assertTrue(junior_model.get_cline_pending_reply("Cline pending\ngit status && ls").startswith("Deny"))
+        self.assertTrue(junior_model.get_cline_pending_reply("Cline pending\ngit status; ls").startswith("Deny"))
+        self.assertTrue(junior_model.get_cline_pending_reply("Cline pending\ngit status | cat").startswith("Deny"))
+
+    def test_cline_pending_git_add_named_backend_approved(self):
+        # Approve git add only with named backend/ paths
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit add backend/app/main.py")
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Approve"))
+        self.assertIn("backend/app/main.py", reply)
+
+    def test_cline_pending_git_add_dash_a_deny(self):
+        # Deny git add -A, git add ., git add --all
+        self.assertTrue(junior_model.get_cline_pending_reply("Cline pending\ngit add -A").startswith("Deny"))
+        self.assertTrue(junior_model.get_cline_pending_reply("Cline pending\ngit add .").startswith("Deny"))
+        self.assertTrue(junior_model.get_cline_pending_reply("Cline pending\ngit add --all").startswith("Deny"))
+
+    def test_cline_pending_git_push_head_without_cursor_branch_deny(self):
+        # Deny git push github HEAD unless paste shows cursor/ branch
+        msg = "Cline pending\ngit push github HEAD"
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_cline_pending_git_push_head_with_cursor_branch_approve(self):
+        # Approve git push github HEAD when paste shows cursor/ branch
+        msg = "Cline pending\ncursor/cline-pending-reply-shape\ngit push github HEAD"
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Approve"))
+
+    def test_cline_pending_next_command_is_fenced_block(self):
+        # Next command is always a fenced code block
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit status")
+        self.assertIn("```", reply)
+        reply2 = junior_model.get_cline_pending_reply("Cline pending\ngit add -A")
+        self.assertIn("```", reply2)
+
+    def test_cline_pending_command_indented_under_header(self):
+        # Match a command indented under "Cline pending:"
+        msg = "Cline pending:\n    git status"
+        self.assertTrue(junior_model.is_cline_pending_command(msg))
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Approve"))
+
+    def test_cline_pending_git_add_non_backend_deny(self):
+        # Deny git add of non-backend paths
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit add frontend/app/main.py")
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_cline_pending_git_add_multiple_backend_approved(self):
+        # Approve git add with multiple backend/ paths
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit add backend/app/main.py backend/tests/test.py")
+        self.assertTrue(reply.startswith("Approve"))
+
+    def test_cline_pending_git_add_wildcard_deny(self):
+        # Deny git add with wildcard patterns
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit add *.py")
+        self.assertTrue(reply.startswith("Deny"))
+
 
 if __name__ == "__main__":
     unittest.main()
