@@ -60,6 +60,54 @@ class OpsTurnTests(unittest.TestCase):
             self.assertFalse(junior_model.is_delegate_turn("Cline pending"))
             self.assertFalse(junior_model.is_delegate_turn("Approve or Deny"))
 
+    def test_is_prompt_only_turn_matches_write_cline_prompt_do_not_start(self):
+        self.assertTrue(junior_model.is_prompt_only_turn("Write a Cline prompt only. Do not start Cursor."))
+        self.assertTrue(junior_model.is_prompt_only_turn("write a cline prompt. do not start cursor."))
+        self.assertFalse(junior_model.is_prompt_only_turn("Write a Cline prompt to fix the login bug"))
+        self.assertFalse(junior_model.is_prompt_only_turn("Start a cursor agent to fix the login bug"))
+
+    def test_build_turn_extras_prompt_only_appends_prompt_only(self):
+        extras = junior_model.build_turn_extras(
+            "Write a Cline prompt only. Do not start Cursor.",
+            memory_block=None,
+            chats_enabled=False,
+            index_block=None,
+            read_meta=None,
+            unread_catalog=None,
+            calendar_connected=False,
+            calendar_tools=False,
+            mail_connected=False,
+            mail_unread=False,
+            unread_mail_md=None,
+            search_enabled=False,
+            will_search=False,
+            prompt_only_turn=True,
+        )
+        joined = "\n".join(extras)
+        self.assertIn("Steve asked you to write a Cline prompt", joined)
+        self.assertNotIn("copy-paste block", joined)
+
+    def test_build_turn_extras_normal_cursor_prompt_appends_cursor_prompt(self):
+        extras = junior_model.build_turn_extras(
+            "Write a Cline prompt to fix the login bug",
+            memory_block=None,
+            chats_enabled=False,
+            index_block=None,
+            read_meta=None,
+            unread_catalog=None,
+            calendar_connected=False,
+            calendar_tools=False,
+            mail_connected=False,
+            mail_unread=False,
+            unread_mail_md=None,
+            search_enabled=False,
+            will_search=False,
+            prompt_only_turn=False,
+        )
+        joined = "\n".join(extras)
+        self.assertIn("copy-paste block", joined)
+        self.assertNotIn("Reply with ONLY one fenced code block", joined)
+
     def test_is_cline_operator_message_detects_patterns(self):
         self.assertTrue(junior_model.is_cline_operator_message("Cline pending"))
         self.assertTrue(junior_model.is_cline_operator_message("The Cline operator is pending"))
