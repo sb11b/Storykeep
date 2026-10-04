@@ -370,11 +370,13 @@ def key_configured() -> bool:
 
 def rewrite_xai_model(model: str) -> str:
     """Map retired aliases to a live chat id. Dead ids hang until a proxy 504."""
+    key = (model or "").strip()
     if _canopy_enabled():
+        if key == "canopy-minimax":
+            return (settings.canopy_minimax_model_name or "").strip() or ""
         canopy = (settings.canopy_model_name or "").strip()
         if canopy:
             return canopy
-    key = (model or "").strip()
     if not key:
         return CURRENT_CHAT_MODEL
     return _DEAD_MODEL_ALIASES.get(key, key)
