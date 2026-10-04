@@ -301,7 +301,7 @@ class JuniorModelTests(unittest.TestCase):
             prompt_only_turn=True,
         )
         joined = "\n".join(extras)
-        self.assertIn("Reply with ONLY a fenced code block", joined)
+        self.assertIn("Steve asked you to write a Cline prompt", joined)
         self.assertNotIn("copy-paste block he can drop into Cursor", joined)
 
     def test_build_turn_extras_normal_cursor_prompt_appends_cursor_prompt(self):

@@ -128,7 +128,7 @@ Do not web-search, list chats, or wander into spec docs. Do not truncate or spli
 """
 
 PROMPT_ONLY_APPEND = """
-Steve asked you to write a Cursor / Cloud Agent prompt. Reply with ONLY a fenced code block. No preface. No sentence before it. Just the prompt inside the fence.
+Steve asked you to write a Cline prompt. Reply with ONLY one fenced code block. No preface, no sentence before or after the fence. Do not start Cursor. Do not start a Cloud Agent.
 """
 
 CURSOR_PROMPT_DETAILS_APPEND = """
