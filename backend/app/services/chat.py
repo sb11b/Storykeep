@@ -1520,6 +1520,7 @@ async def stream_completion(
     started = time.perf_counter()
     first_token_at: float | None = None
     xai_status: int | str | None = None
+    canopy_buf: str = ""  # accumulate across SSE lines when inside Kimi markers
     fb_timeout = (
         float(first_byte_timeout)
         if first_byte_timeout is not None
@@ -1643,7 +1644,40 @@ async def stream_completion(
                             continue
                     if text:
                         if _canopy_enabled():
-                            text = _strip_canopy_tool_markup(text)
+                            canopy_buf += text
+                            # while there is visible text to yield before any open marker
+                            while True:
+                                # find the earliest unclosed or closed marker start
+                                earliest = None
+                                for pat in ("<|thinking_begin|>", "<|tool_call_begin|>", "<|tool_calls_section_begin|>"):
+                                    idx = canopy_buf.find(pat)
+                                    if idx != -1:
+                                        if earliest is None or idx < earliest[0]:
+                                            earliest = (idx, pat)
+                                if earliest is None:
+                                    # no markers at all
+                                    if canopy_buf:
+                                        yield canopy_buf
+                                        canopy_buf = ""
+                                    break
+                                pos, pat = earliest
+                                if pos > 0:
+                                    yield canopy_buf[:pos]
+                                    canopy_buf = canopy_buf[pos:]
+                                # now starts with a marker; strip complete or unclosed blocks
+                                end_pats = {
+                                    "<|thinking_begin|>": "<|thinking_end|>",
+                                    "<|tool_call_begin|>": "<|tool_call_end|>",
+                                    "<|tool_calls_section_begin|>": "<|tool_calls_section_end|>",
+                                }
+                                end_pat = end_pats[pat]
+                                end_pos = canopy_buf.find(end_pat, len(pat))
+                                if end_pos != -1:
+                                    canopy_buf = canopy_buf[end_pos + len(end_pat):]
+                                else:
+                                    # still open; hold everything
+                                    break
+                            continue
                         yield text
                 if first_token_at is None:
                     _xai_ttft_log(
@@ -1876,15 +1910,15 @@ def complete_once(
     text = _content_text(message.get("content") if isinstance(message, dict) else "").strip()
     if not text:
         raise HTTPException(status_code=502, detail="Grok returned an empty reply.")
-    text = _strip_canopy_tool_markup(text)
+    if _canopy_enabled():
+        text = _strip_canopy_tool_markup(text)
     return {"text": text, "model": resolved_model, "reasoning": effort}
 
 
 def _strip_canopy_tool_markup(text: str) -> str:
-    """Remove the Kimi think and tool-section tokens Junior printed."""
     stripped = text or ""
-    stripped = re.sub(r"<think>.*?</think>", "", stripped, flags=re.DOTALL)
-    stripped = re.sub(r"</think>", "", stripped)
+    stripped = re.sub(r"<\|thinking_begin\|>.*?<\|thinking_end\|>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"<\|thinking_end\|>", "", stripped)
     stripped = re.sub(r"<\|tool_calls_section_begin\|>.*?<\|tool_calls_section_end\|>", "", stripped, flags=re.DOTALL)
     stripped = re.sub(r"<\|tool_call_begin\|>.*?<\|tool_call_end\|>", "", stripped, flags=re.DOTALL)
     stripped = re.sub(r"<\|tool_calls_section_begin\|>.*", "", stripped, flags=re.DOTALL)

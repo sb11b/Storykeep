@@ -95,14 +95,13 @@ def test_canopy_chat_url_and_model_when_set():
 def test_strip_printed_kimi_leak():
     from app.services import chat as chat_service
     leaked = (
-        "The third screen is Stories.</think>"
-        "For the Dodgers score, let me look that up."
-        "<|tool_calls_section_begin|>"
-        "<|tool_call_begin|>functions.web_search:0"
-        "<|tool_call_argument_begin|>"
+        'The third screen is Stories.<|thinking_begin|>'
+        'For the Dodgers score, let me look that up.<|thinking_end|>'
+        '<|tool_calls_section_begin|>'
+        '<|tool_call_begin|>'
         '{"query": "Dodgers game yesterday score October 3 2026"}'
-        "<|tool_call_end|>"
-        "<|tool_calls_section_end|>"
+        '<|tool_call_end|>'
+        '<|tool_calls_section_end|>'
     )
-    assert chat_service._strip_canopy_tool_markup(leaked) == "The third screen is Stories.For the Dodgers score, let me look that up."
+    assert chat_service._strip_canopy_tool_markup(leaked) == "The third screen is Stories."
 
