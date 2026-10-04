@@ -322,6 +322,31 @@ def responses_url() -> str:
     return "https://api.x.ai/v1/responses"
 
 
+def _xai_responses_url() -> str:
+    """Always return the xAI responses URL, ignoring Canopy."""
+    url = (settings.xai_chat_url or "https://api.x.ai/v1/chat/completions").strip()
+    url = url or "https://api.x.ai/v1/chat/completions"
+    if url.endswith("/chat/completions"):
+        return url[: -len("chat/completions")] + "responses"
+    return "https://api.x.ai/v1/responses"
+
+
+def _xai_key() -> str:
+    """Always return the xAI key, ignoring Canopy."""
+    key = (settings.xai_api_key or "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chat is off until XAI_API_KEY is set on the server (Railway variables).",
+        )
+    if not key.startswith("xai-"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="XAI_API_KEY must start with xai- (check Railway variables).",
+        )
+    return key
+
+
 def _canopy_enabled() -> bool:
     return bool((settings.canopy_base_url or "").strip())
 
@@ -1906,7 +1931,7 @@ def complete_with_server_tools(
     kinds = tuple(kind for kind in tool_types if kind and kind != "code_interpreter")
     if not kinds:
         raise HTTPException(status_code=502, detail=fail_detail)
-    key = require_key()
+    key = _xai_key()
     resolved_model = rewrite_xai_model(model or default_full_model())
     effort = clamp_reasoning_effort(resolved_model, reasoning_effort or DEFAULT_REASONING_EFFORT)
     payload: dict[str, object] = {
@@ -1935,7 +1960,7 @@ def complete_with_server_tools(
                     pool=10.0,
                 )
             ) as client:
-                response = client.post(responses_url(), json=payload, headers=_auth_headers(key))
+                response = client.post(_xai_responses_url(), json=payload, headers=_auth_headers(key))
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502, detail=_transport_error_detail(exc)) from exc
         if response.status_code >= 400:

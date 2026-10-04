@@ -46,4 +46,21 @@ def test_canopy_chat_url_and_model_when_set():
             assert chat_service.require_key() == "canopy-secret"
             assert chat_service.key_format_ok()
 
+    # When canopy_base_url is set, _xai_key() still returns xai_api_key and _xai_responses_url() stays xAI
+    with patch.object(chat_service.settings, "xai_api_key", "xai-test-key"):
+        with patch.object(chat_service.settings, "canopy_api_key", "canopy-secret"):
+            with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
+                # Normal chat still uses Canopy
+                assert chat_service.require_key() == "canopy-secret"
+                assert chat_service.chat_url() == "https://canopy.example.com/v1/chat/completions"
+                assert chat_service.responses_url() == "https://canopy.example.com/v1/responses"
+                # But _xai_key() and _xai_responses_url() always use xAI
+                assert chat_service._xai_key() == "xai-test-key"
+                assert chat_service._xai_responses_url() == "https://api.x.ai/v1/responses"
+
+    # When xai_chat_url is custom, _xai_responses_url() derives from it
+    with patch.object(chat_service.settings, "xai_chat_url", "https://custom.x.ai/v1/chat/completions"):
+        with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
+            assert chat_service._xai_responses_url() == "https://custom.x.ai/v1/responses"
+
     # Unset at end (patcher context managers handle it)
