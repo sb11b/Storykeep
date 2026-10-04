@@ -1649,7 +1649,7 @@ async def stream_completion(
                             while True:
                                 # find the earliest unclosed or closed marker start
                                 earliest = None
-                                for pat in ("</think>", "<think>", "<|tool_call_begin|>", "<|tool_calls_section_begin|>"):
+                                for pat in ("</think>", "<think>", "<|thinking_begin|>", "<|tool_call_begin|>", "<|tool_calls_section_begin|>"):
                                     idx = canopy_buf.find(pat)
                                     if idx != -1:
                                         if earliest is None or idx < earliest[0]:
@@ -1666,7 +1666,7 @@ async def stream_completion(
                                     canopy_buf = canopy_buf[pos:]
                                 # now starts with a marker; strip complete or unclosed blocks
                                 end_pats = {
-                                    "</think>": "", "<think>": "</think>",
+                                    "</think>": "", "<think>": "</think>", "<|thinking_begin|>": "<|thinking_end|>",
                                     "<|tool_call_begin|>": "<|tool_call_end|>",
                                     "<|tool_calls_section_begin|>": "<|tool_calls_section_end|>",
                                 }
@@ -1923,11 +1923,14 @@ def _strip_canopy_tool_markup(text: str) -> str:
     stripped = re.sub(r"<think>.*?</think>", "", stripped, flags=re.DOTALL)
     stripped = re.sub(r"</think>", "", stripped)
     stripped = re.sub(r"<\|thinking_begin\|>.*?<\|thinking_end\|>", "", stripped, flags=re.DOTALL)
-    stripped = re.sub(r"<\|thinking_end\|>", "", stripped)
     stripped = re.sub(r"<\|tool_calls_section_begin\|>.*?<\|tool_calls_section_end\|>", "", stripped, flags=re.DOTALL)
     stripped = re.sub(r"<\|tool_call_begin\|>.*?<\|tool_call_end\|>", "", stripped, flags=re.DOTALL)
     stripped = re.sub(r"<\|tool_calls_section_begin\|>.*", "", stripped, flags=re.DOTALL)
     stripped = re.sub(r"<\|tool_call_begin\|>.*", "", stripped, flags=re.DOTALL)
+    for opener in ("<think>", "<|thinking_begin|>"):
+        cut = stripped.find(opener)
+        if cut != -1:
+            stripped = stripped[:cut]
     return stripped.strip()
 
 
