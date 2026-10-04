@@ -372,14 +372,20 @@ def get_cline_pending_reply(message: str) -> str | None:
     # Extract the command from the message (first command-like line)
     lines = text.splitlines()
     command = ""
+    command_count = 0
     for line in lines:
         stripped = line.strip()
         if not stripped:
             continue
         lower = stripped.lower()
         if lower.startswith(("git ", "pip ", "dir ", "get-childitem ", "cd ", "pytest")):
-            command = stripped
-            break
+            command_count += 1
+            if command_count == 1:
+                command = stripped
+            # Continue counting; we'll check after the loop
+
+    if command_count > 1:
+        return "Deny\nThis command is not on the approved list.\n```git status```"
 
     if not command:
         return None

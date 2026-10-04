@@ -360,6 +360,12 @@ class OpsTurnTests(unittest.TestCase):
         reply = junior_model.get_cline_pending_reply("Cline pending\ngit add backend/app[0-9].py")
         self.assertTrue(reply.startswith("Deny"))
 
+    def test_cline_pending_multiple_commands_deny(self):
+        # Deny if paste contains more than one command-like line
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit status\npip install requests")
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Deny"))
+
 
 if __name__ == "__main__":
     unittest.main()
