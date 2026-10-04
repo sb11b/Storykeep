@@ -170,6 +170,22 @@ class JuniorModelTests(unittest.TestCase):
         self.assertIn("then fast-forward main from Ubuntu.", reply)
         self.assertNotIn("stop", reply.lower())
 
+    def test_fast_forward_on_main_returns_none(self):
+        """If the branch is main, fast_forward_reply returns None."""
+        paste = (
+            "On branch main\n"
+            "Not possible to fast-forward, aborting.\n"
+        )
+        self.assertIsNone(junior_model.fast_forward_reply(paste))
+
+    def test_fast_forward_newline_after_on_branch_returns_none(self):
+        """A newline after 'On branch' must not capture 'Not' as the branch name."""
+        paste = (
+            "On branch\n"
+            "Not possible to fast-forward, aborting.\n"
+        )
+        self.assertIsNone(junior_model.fast_forward_reply(paste))
+
     def test_build_turn_extras_includes_capabilities(self):
         extras = junior_model.build_turn_extras(
             "what can you do from this chat",

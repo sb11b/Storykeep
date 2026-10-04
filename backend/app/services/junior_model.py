@@ -57,10 +57,12 @@ def fast_forward_reply(message: str) -> str | None:
     text = message or ""
     if "Not possible to fast-forward" not in text:
         return None
-    match = re.search(r"On branch\s+([A-Za-z0-9._/-]+)", text)
+    match = re.search(r"^On branch[ \t]+([A-Za-z0-9._/-]+)$", text, re.MULTILINE)
     if not match:
         return None
     branch = match.group(1)
+    if branch == "main":
+        return None
     return (
         f"The feature branch does not contain main.\n"
         f"git checkout {branch}\n"
