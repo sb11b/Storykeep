@@ -144,6 +144,32 @@ class JuniorModelTests(unittest.TestCase):
         self.assertTrue(junior_model.is_android_project_turn(msg))
         self.assertFalse(junior_model.is_cursor_task_turn(msg))
 
+    def test_pasted_git_transcript_not_fast_forward_not_cursor_task(self):
+        """A pasted git transcript with 'Not possible to fast-forward' is not a cursor task.
+
+        The transcript must not invent a branch name — a word in a sentence is not a branch.
+        When the paste contains 'Not possible to fast-forward', the reply must say the
+        feature branch does not contain main, then checkout that feature branch, merge
+        github/main, push the feature branch, then fast-forward main.
+        """
+        paste = (
+            "On branch cursor/junior-git-transcript-v1\n"
+            "Your branch is behind 'github/main' by 3 commits.\n"
+            "Not possible to fast-forward, aborting.\n"
+            "fatal: Not possible to fast-forward, aborting.\n"
+        )
+        self.assertTrue(junior_model.is_pasted_ops_log(paste))
+        self.assertFalse(junior_model.is_cursor_task_turn(paste))
+        # Also verify the fast_forward_reply function handles this paste
+        reply = junior_model.fast_forward_reply(paste)
+        self.assertIsNotNone(reply)
+        self.assertIn("The feature branch does not contain main.", reply)
+        self.assertIn("git checkout cursor/junior-git-transcript-v1", reply)
+        self.assertIn("git merge github/main", reply)
+        self.assertIn("git push github HEAD", reply)
+        self.assertIn("then fast-forward main from Ubuntu.", reply)
+        self.assertNotIn("stop", reply.lower())
+
     def test_build_turn_extras_includes_capabilities(self):
         extras = junior_model.build_turn_extras(
             "what can you do from this chat",

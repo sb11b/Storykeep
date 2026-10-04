@@ -1215,8 +1215,10 @@ def _chat(
         or cursor_agent_tool.diverged_ff_reply(user_text)
         or cursor_agent_tool.local_merge_repair(user_text)
     )
+    fast_forward_text = junior_model.fast_forward_reply(user_text)
     will_cursor_start = (
         merge_repair_text is None
+        and fast_forward_text is None
         and junior_model.should_server_start_agent(user_text, configured=cursor_enabled)
     )
     ops_turn = owner_ops and junior_model.is_ops_turn(user_text)
@@ -1630,6 +1632,23 @@ def _chat(
             if merge_repair_text:
                 await emit_delta(merge_repair_text)
                 yield chat_service.encode_sse({"delta": merge_repair_text, "stream_status": "writing"})
+                if persist and conversation_id:
+                    assistant_message_id = _persist_assistant("".join(assistant_parts))
+                    if assistant_message_id:
+                        yield chat_service.encode_sse(
+                            {
+                                "conversation_id": str(conversation_id),
+                                "assistant_message_id": assistant_message_id,
+                                "model": resolved_model,
+                                "model_choice": model_choice,
+                                "reasoning_effort": resolved_reasoning,
+                            }
+                        )
+                yield chat_service.encode_sse("[DONE]")
+                return
+            if fast_forward_text:
+                await emit_delta(fast_forward_text)
+                yield chat_service.encode_sse({"delta": fast_forward_text, "stream_status": "writing"})
                 if persist and conversation_id:
                     assistant_message_id = _persist_assistant("".join(assistant_parts))
                     if assistant_message_id:

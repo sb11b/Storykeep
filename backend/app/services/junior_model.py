@@ -53,6 +53,22 @@ _ANDROID_PROJECT_RE = re.compile(
     re.I,
 )
 
+def fast_forward_reply(message: str) -> str | None:
+    text = message or ""
+    if "Not possible to fast-forward" not in text:
+        return None
+    match = re.search(r"On branch\s+([A-Za-z0-9._/-]+)", text)
+    if not match:
+        return None
+    branch = match.group(1)
+    return (
+        f"The feature branch does not contain main.\n"
+        f"git checkout {branch}\n"
+        f"git merge github/main\n"
+        f"git push github HEAD\n"
+        f"then fast-forward main from Ubuntu."
+    )
+
 JUNIOR_CAPABILITIES_APPEND = """
 When Steve asks who you are or what you can do, use the **Junior capabilities** section in standing memory.
 Owner ops: github_status (read repo) and railway_deploy (Storykeep web only) when configured and he explicitly asks — confirm what you did after tool calls.

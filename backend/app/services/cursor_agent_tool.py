@@ -1950,7 +1950,11 @@ Junior read the word "is" in "Your branch is behind" as a branch name. Ignore "B
 
 def diverged_ff_reply(message: str) -> str | None:
     """Git already finished. A fast-forward failure is not a Cloud Agent task."""
+    from app.services import junior_model
+
     text = message or ""
+    if junior_model.fast_forward_reply(text) is not None:
+        return None
     if _DIVERGED_FF_RE.search(text):
         return DIVERGED_FF_REPLY
     if re.search(r"branch\s+['\"]is['\"]\s+does not exist", text, re.I) and re.search(

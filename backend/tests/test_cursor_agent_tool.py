@@ -718,6 +718,25 @@ class CursorAgentToolTests(unittest.TestCase):
         self.assertIn("Do not merge", outcome.text)
         mock_client_cls.assert_not_called()
 
+    def test_pasted_git_transcript_fast_forward_reply_no_stop(self):
+        """A paste with 'On branch' and 'Not possible to fast-forward' gets fast_forward_reply,
+        and diverged_ff_reply returns None so the Stop reply does not ship."""
+        from app.services import junior_model
+
+        paste = (
+            "On branch cursor/junior-git-transcript-v1\n"
+            "Your branch is behind 'github/main' by 3 commits.\n"
+            "Not possible to fast-forward, aborting.\n"
+            "fatal: Not possible to fast-forward, aborting.\n"
+        )
+        ff_reply = junior_model.fast_forward_reply(paste)
+        self.assertIsNotNone(ff_reply)
+        self.assertIn("git checkout cursor/junior-git-transcript-v1", ff_reply)
+        self.assertIn("git merge github/main", ff_reply)
+        self.assertIn("git push github HEAD", ff_reply)
+        self.assertNotIn("stop", ff_reply.lower())
+        self.assertIsNone(cursor_agent_tool.diverged_ff_reply(paste))
+
     def test_push_workflow_mentions_cursor_branch(self):
         text = cursor_agent_tool.push_workflow_for_user(
             agent_url="https://cursor.com/agents/bc-test",
