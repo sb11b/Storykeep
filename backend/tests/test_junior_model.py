@@ -277,15 +277,10 @@ class JuniorModelTests(unittest.TestCase):
         )
         self.assertIn("truncated=true", payload[0]["content"])
 
-    def test_prompt_only_turn_matches_write_cline_prompt_do_not_start(self):
-        self.assertTrue(junior_model.is_prompt_only_turn("Write a Cline prompt only. Do not start Cursor."))
-        self.assertTrue(junior_model.is_prompt_only_turn("write a cline prompt. do not start cursor."))
-        self.assertFalse(junior_model.is_prompt_only_turn("Write a Cline prompt to fix the login bug"))
-        self.assertFalse(junior_model.is_prompt_only_turn("Start a cursor agent to fix the login bug"))
-
-    def test_build_turn_extras_prompt_only_appends_prompt_only(self):
+    def test_cline_agent_does_not_trigger_cline_prompt_only(self):
+        """A request mentioning 'Cline agent' but not 'Cline prompt' stays a normal cursor turn."""
         extras = junior_model.build_turn_extras(
-            "Write a Cline prompt only. Do not start Cursor.",
+            "Start a Cline agent",
             memory_block=None,
             chats_enabled=False,
             index_block=None,
@@ -298,15 +293,34 @@ class JuniorModelTests(unittest.TestCase):
             unread_mail_md=None,
             search_enabled=False,
             will_search=False,
-            prompt_only_turn=True,
+        )
+        joined = "\n".join(extras)
+        self.assertNotIn("Cline prompt only", joined)
+
+    def test_cline_prompt_only_appends_without_cursor_generate(self):
+        """A direct 'Write a Cline prompt only …' request gets CLINE_PROMPT_ONLY_APPEND even without cursor generate mode."""
+        extras = junior_model.build_turn_extras(
+            "Write a Cline prompt only",
+            memory_block=None,
+            chats_enabled=False,
+            index_block=None,
+            read_meta=None,
+            unread_catalog=None,
+            calendar_connected=False,
+            calendar_tools=False,
+            mail_connected=False,
+            mail_unread=False,
+            unread_mail_md=None,
+            search_enabled=False,
+            will_search=False,
         )
         joined = "\n".join(extras)
         self.assertIn("Steve asked you to write a Cline prompt", joined)
-        self.assertNotIn("copy-paste block he can drop into Cursor", joined)
 
-    def test_build_turn_extras_normal_cursor_prompt_appends_cursor_prompt(self):
+    def test_bare_cline_prompt_does_not_trigger_cline_prompt_only(self):
+        """A question about a Cline prompt ('What is wrong with this Cline prompt?') must not trigger the append."""
         extras = junior_model.build_turn_extras(
-            "Write a Cline prompt to fix the login bug",
+            "What is wrong with this Cline prompt?",
             memory_block=None,
             chats_enabled=False,
             index_block=None,
@@ -319,11 +333,9 @@ class JuniorModelTests(unittest.TestCase):
             unread_mail_md=None,
             search_enabled=False,
             will_search=False,
-            prompt_only_turn=False,
         )
         joined = "\n".join(extras)
-        self.assertIn("copy-paste block he can drop into Cursor", joined)
-        self.assertNotIn("Reply with ONLY a fenced code block", joined)
+        self.assertNotIn("Cline prompt only", joined)
 
 
 if __name__ == "__main__":
