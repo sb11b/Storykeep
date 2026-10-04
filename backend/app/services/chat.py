@@ -1462,7 +1462,10 @@ async def stream_completion(
             content = item.get("content")
             last_user = content if isinstance(content, str) else ""
             break
-    if should_attach_chat_tools(last_user):
+    if _canopy_enabled():
+        # Canopy does not support web_search / code_execution; strip those tools.
+        attach_tools = None
+    elif should_attach_chat_tools(last_user):
         attach_tools = tools
     else:
         from app.services.chat_index import is_chat_index_tool
@@ -1871,7 +1874,15 @@ def complete_once(
     text = _content_text(message.get("content") if isinstance(message, dict) else "").strip()
     if not text:
         raise HTTPException(status_code=502, detail="Grok returned an empty reply.")
+    text = _strip_canopy_tool_markup(text)
     return {"text": text, "model": resolved_model, "reasoning": effort}
+
+
+def _strip_canopy_tool_markup(text: str) -> str:
+    """Remove Kimi tool-use markup from Canopy replies."""
+    stripped = re.sub(r"<\|tool_call_begin\|>.*?<\|tool_call_end\|>", "", text, flags=re.DOTALL)
+    stripped = re.sub(r"<\|tool_call_begin\|>.*", "", stripped, flags=re.DOTALL)
+    return stripped.strip()
 
 
 def parse_responses_text(body: dict) -> str:

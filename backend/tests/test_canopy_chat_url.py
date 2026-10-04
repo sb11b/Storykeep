@@ -63,4 +63,30 @@ def test_canopy_chat_url_and_model_when_set():
         with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
             assert chat_service._xai_responses_url() == "https://custom.x.ai/v1/responses"
 
+    # When canopy_base_url is set, normal chat strips tools from completions payload
+    with patch.object(chat_service.settings, "canopy_base_url", "https://canopy.example.com/v1"):
+        with patch.object(chat_service.settings, "canopy_model_name", "brain-1"):
+            payload = chat_service.build_chat_completions_payload(
+                messages=[{"role": "user", "content": "hello"}],
+                model="grok-4.6",
+                reasoning_effort="low",
+                max_tokens=1200,
+                stream=False,
+                temperature=0.6,
+                tools=[{"type": "web_search"}, {"type": "code_interpreter"}],
+            )
+            assert "tools" not in payload
+
+    # _strip_canopy_tool_markup removes Kimi tool-use tokens
+    assert chat_service._strip_canopy_tool_markup("Hello world") == "Hello world"
+    assert chat_service._strip_canopy_tool_markup(
+        "Hello <|tool_call_begin|>{'query': 'test'}<|tool_call_end|>world"
+    ) == "Hello world"
+    assert chat_service._strip_canopy_tool_markup(
+        "Hello <|tool_call_begin|>{'query': 'test'}"
+    ) == "Hello"
+    assert chat_service._strip_canopy_tool_markup(
+        "Text<|tool_call_begin|>{'q': 'x'}<|tool_call_end|>More"
+    ) == "TextMore"
+
     # Unset at end (patcher context managers handle it)
