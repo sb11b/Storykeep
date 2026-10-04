@@ -1223,6 +1223,7 @@ def _chat(
     )
     ops_turn = owner_ops and junior_model.is_ops_turn(user_text)
     delegate_turn = owner_ops and junior_model.is_delegate_turn(user_text)
+    prompt_only_turn = junior_model.is_prompt_only_turn(user_text)
     will_x = (
         search_enabled
         and x_tool.wants_x_lookup(user_text)
@@ -1262,6 +1263,7 @@ def _chat(
         cursor_tools=cursor_tools_on,
         ops_turn=ops_turn,
         delegate_turn=delegate_turn,
+        prompt_only_turn=prompt_only_turn,
     )
     ledger_text = junior_shared_memory.get_ledger_for_prompt(db, user)
     if ledger_text:

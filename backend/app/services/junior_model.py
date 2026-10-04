@@ -24,8 +24,8 @@ _CURSOR_SECTION_RE = re.compile(r"(?im)^#+\s*.*\bCURSOR\b.*$")
 _CAPABILITIES_SECTION_RE = re.compile(r"(?im)^#+\s*.*Junior capabilities.*$")
 _ASK_CURSOR_PROMPT_RE = re.compile(
     r"\b(?:write|draft|generate|create|give me|need|make|want)\s+(?:me\s+)?(?:a\s+)?"
-    r"(?:prompt for (?:the\s+)?cursor|cursor prompt|cursor agent prompt|cloud agent prompt)\b|"
-    r"\b(?:prompt for (?:the\s+)?cursor|cursor agent prompt|cloud agent prompt)\s+(?:for|to)\b",
+    r"(?:prompt for (?:the\s+)?(?:cursor|cline)|(?:cursor|cline) prompt|(?:cursor|cline) agent prompt|cloud agent prompt)\b|"
+    r"\b(?:prompt for (?:the\s+)?(?:cursor|cline)|(?:cursor|cline) agent prompt|cloud agent prompt)\s+(?:for|to)\b",
     re.I,
 )
 _TASK_VERB_RE = re.compile(
@@ -127,6 +127,10 @@ Do not web-search, list chats, or wander into spec docs. Do not truncate or spli
 - No sentence before the opening fence.
 """
 
+PROMPT_ONLY_APPEND = """
+Steve asked you to write a Cursor / Cloud Agent prompt. Reply with ONLY a fenced code block. No preface. No sentence before it. Just the prompt inside the fence.
+"""
+
 CURSOR_PROMPT_DETAILS_APPEND = """
 Steve already gave task details (typed or dictated). Fold every detail into the copy-paste block — do not replace or narrow his scope.
 """
@@ -159,9 +163,19 @@ def asks_for_cursor_prompt(message: str) -> bool:
         return False
     asks = bool(re.search(r"\b(?:write|draft|generate|give|need|make|create|want)\b", text, re.I))
     cursor = bool(
-        re.search(r"\b(?:prompt for (?:the\s+)?cursor|cursor prompt|cloud agent)\b", text, re.I)
+        re.search(r"\b(?:prompt for (?:the\s+)?(?:cursor|cline)|(?:cursor|cline) prompt|cloud agent)\b", text, re.I)
     )
     return asks and cursor
+
+
+def is_prompt_only_turn(message: str) -> bool:
+    """Steve wants a prompt-only reply: one fenced block, no preface, no sentences before it."""
+    text = (message or "").strip()
+    if not text:
+        return False
+    has_prompt = bool(re.search(r"\bwrite\s+a\s+cline\s+prompt\b", text, re.I))
+    has_do_not_start = bool(re.search(r"\bdo\s+not\s+start\b", text, re.I))
+    return has_prompt and has_do_not_start
 
 
 def cursor_prompt_has_task_details(message: str) -> bool:
@@ -616,6 +630,7 @@ def build_turn_extras(
     cursor_tools: bool = False,
     ops_turn: bool = False,
     delegate_turn: bool = False,
+    prompt_only_turn: bool = False,
 ) -> list[str]:
     """Attach only what this turn needs. Never dump spec docs or full chat bodies."""
     del memory_block  # standing memory lives in standing_system(), not extras
@@ -680,7 +695,10 @@ def build_turn_extras(
         )
     mode = cursor_turn_mode(user_text)
     if mode == "generate":
-        extras.append(CURSOR_PROMPT_APPEND)
+        if prompt_only_turn:
+            extras.append(PROMPT_ONLY_APPEND)
+        else:
+            extras.append(CURSOR_PROMPT_APPEND)
         if cursor_prompt_has_task_details(user_text):
             extras.append(CURSOR_PROMPT_DETAILS_APPEND)
     elif mode == "follow":
