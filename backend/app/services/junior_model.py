@@ -24,8 +24,13 @@ _CURSOR_SECTION_RE = re.compile(r"(?im)^#+\s*.*\bCURSOR\b.*$")
 _CAPABILITIES_SECTION_RE = re.compile(r"(?im)^#+\s*.*Junior capabilities.*$")
 _ASK_CURSOR_PROMPT_RE = re.compile(
     r"\b(?:write|draft|generate|create|give me|need|make|want)\s+(?:me\s+)?(?:a\s+)?"
-    r"(?:prompt for (?:the\s+)?(?:cursor|cline)|(?:cursor|cline) prompt|(?:cursor|cline) agent prompt|cloud agent prompt)\b|"
-    r"\b(?:prompt for (?:the\s+)?(?:cursor|cline)|(?:cursor|cline) agent prompt|cloud agent prompt)\s+(?:for|to)\b",
+    r"(?:prompt for (?:the\s+)?cursor|cursor prompt|cursor agent prompt|cloud agent prompt)\b|"
+    r"\b(?:prompt for (?:the\s+)?cursor|cursor agent prompt|cloud agent prompt)\s+(?:for|to)\b",
+    re.I,
+)
+_ASK_CLINE_PROMPT_ONLY_RE = re.compile(
+    r"\bwrite\s+a\s+cline\s+prompt\b|"
+    r"\bcline\s+prompt\s+only\b",
     re.I,
 )
 _TASK_VERB_RE = re.compile(
@@ -127,8 +132,10 @@ Do not web-search, list chats, or wander into spec docs. Do not truncate or spli
 - No sentence before the opening fence.
 """
 
-PROMPT_ONLY_APPEND = """
+CLINE_PROMPT_ONLY_APPEND = """
 Steve asked you to write a Cline prompt. Reply with ONLY one fenced code block. No preface, no sentence before or after the fence. Do not start Cursor. Do not start a Cloud Agent.
+The block must include the goal, the named files, and every "Do not" line.
+Do not stop mid-sentence. Do not call a tool.
 """
 
 CURSOR_PROMPT_DETAILS_APPEND = """
@@ -163,19 +170,18 @@ def asks_for_cursor_prompt(message: str) -> bool:
         return False
     asks = bool(re.search(r"\b(?:write|draft|generate|give|need|make|create|want)\b", text, re.I))
     cursor = bool(
-        re.search(r"\b(?:prompt for (?:the\s+)?(?:cursor|cline)|(?:cursor|cline) prompt|cloud agent)\b", text, re.I)
+        re.search(r"\b(?:prompt for (?:the\s+)?cursor|cursor prompt|cloud agent)\b", text, re.I)
     )
     return asks and cursor
 
 
 def is_prompt_only_turn(message: str) -> bool:
-    """Steve wants a prompt-only reply: one fenced block, no preface, no sentences before it."""
-    text = (message or "").strip()
-    if not text:
-        return False
-    has_prompt = bool(re.search(r"\bwrite\s+a\s+cline\s+prompt\b", text, re.I))
-    has_do_not_start = bool(re.search(r"\bdo\s+not\s+start\b", text, re.I))
-    return has_prompt and has_do_not_start
+    return is_cline_prompt_only_turn(message)
+
+
+def is_cline_prompt_only_turn(message: str) -> bool:
+    """Steve wants a Cline prompt only — one fenced block, nothing else."""
+    return bool(_ASK_CLINE_PROMPT_ONLY_RE.search(message or ""))
 
 
 def cursor_prompt_has_task_details(message: str) -> bool:
@@ -198,9 +204,41 @@ _DATE_QUESTION_RE = re.compile(
     re.I,
 )
 
+_SCORE_QUESTION_RE = re.compile(
+    r"\bscore\b.*\b(?:game|match|matchup|team)\b|"
+    r"\bwhat'?s?\s+(?:the\s+)?score\b",
+    re.I,
+)
+
+_NEWS_QUESTION_RE = re.compile(
+    r"\bwhat\s+(?:is|are)\s+(?:in\s+the\s+)?news\b|"
+    r"\bnews\b.*\bheadlines?\b|"
+    r"\blatest\s+news\b|"
+    r"\bnews\s+today\b",
+    re.I,
+)
+
+SCORE_ON_APPEND = """
+Score question — call web_search once, then answer in one or two sentences. Do not paste the tool payload, snippet, or JSON into the reply. Cite each source as [title](url).
+"""
+
+NEWS_ON_APPEND = """
+News question — call web_search once, then give a few headlines. Do not paste the tool payload, snippet, or JSON into the reply. Cite each source as [title](url).
+"""
+
 def is_date_question(message: str) -> bool:
     """True when the user asks for the current date/time — answer from the server clock, do not web_search."""
     return bool(_DATE_QUESTION_RE.search((message or "").strip()))
+
+
+def is_score_question(message: str) -> bool:
+    """True when the user asks for a game score."""
+    return bool(_SCORE_QUESTION_RE.search((message or "").strip()))
+
+
+def is_news_question(message: str) -> bool:
+    """True when the user asks for news or headlines."""
+    return bool(_NEWS_QUESTION_RE.search((message or "").strip()))
 
 
 def is_junior_feedback_turn(message: str) -> bool:
@@ -622,6 +660,8 @@ def build_turn_extras(
     search_enabled: bool,
     will_search: bool,
     will_x: bool = False,
+    score_question: bool = False,
+    news_question: bool = False,
     railway_enabled: bool = False,
     railway_tools: bool = False,
     github_enabled: bool = False,
@@ -670,7 +710,12 @@ def build_turn_extras(
     elif mail_connected and mail_tool.wants_send_mail(user_text):
         extras.append(mail_tool.MAIL_ON_APPEND)
     if search_enabled and not cursor_task and will_search:
-        extras.append(search_tool.SEARCH_ON_APPEND)
+        if score_question:
+            extras.append(SCORE_ON_APPEND)
+        elif news_question:
+            extras.append(NEWS_ON_APPEND)
+        else:
+            extras.append(search_tool.SEARCH_ON_APPEND)
     if search_enabled and not cursor_task and will_x:
         extras.append(x_tool.X_ON_APPEND)
     if not cursor_task:
@@ -695,12 +740,11 @@ def build_turn_extras(
         )
     mode = cursor_turn_mode(user_text)
     if mode == "generate":
-        if prompt_only_turn:
-            extras.append(PROMPT_ONLY_APPEND)
-        else:
-            extras.append(CURSOR_PROMPT_APPEND)
+        extras.append(CURSOR_PROMPT_APPEND)
         if cursor_prompt_has_task_details(user_text):
             extras.append(CURSOR_PROMPT_DETAILS_APPEND)
     elif mode == "follow":
         extras.append(CURSOR_FOLLOW_APPEND)
+    if is_cline_prompt_only_turn(user_text):
+        extras.append(CLINE_PROMPT_ONLY_APPEND)
     return extras
