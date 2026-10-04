@@ -57,10 +57,10 @@ def fast_forward_reply(message: str) -> str | None:
     text = message or ""
     if "Not possible to fast-forward" not in text:
         return None
-    match = re.search(r"^On branch[ \t]+([A-Za-z0-9._/-]+)$", text, re.MULTILINE)
-    if not match:
+    branches = re.findall(r"^On branch[ \t]+([A-Za-z0-9._/-]+)$", text, re.MULTILINE)
+    if len(branches) != 1:
         return None
-    branch = match.group(1)
+    branch = branches[0]
     if branch == "main":
         return None
     return (

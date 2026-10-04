@@ -186,6 +186,16 @@ class JuniorModelTests(unittest.TestCase):
         )
         self.assertIsNone(junior_model.fast_forward_reply(paste))
 
+    def test_fast_forward_two_on_branch_lines_returns_none(self):
+        """Two 'On branch' lines means the transcript is ambiguous; return None."""
+        paste = (
+            "On branch cursor/junior-git-transcript-v1\n"
+            "Your branch is behind 'github/main' by 3 commits.\n"
+            "On branch main\n"
+            "Not possible to fast-forward, aborting.\n"
+        )
+        self.assertIsNone(junior_model.fast_forward_reply(paste))
+
     def test_build_turn_extras_includes_capabilities(self):
         extras = junior_model.build_turn_extras(
             "what can you do from this chat",
