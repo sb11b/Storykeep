@@ -305,11 +305,17 @@ _models_cache: tuple[float, set[str]] | None = None
 
 
 def chat_url() -> str:
+    base = (settings.canopy_base_url or "").strip()
+    if base:
+        return base.rstrip("/") + "/chat/completions"
     url = (settings.xai_chat_url or "https://api.x.ai/v1/chat/completions").strip()
     return url or "https://api.x.ai/v1/chat/completions"
 
 
 def responses_url() -> str:
+    base = (settings.canopy_base_url or "").strip()
+    if base:
+        return base.rstrip("/") + "/responses"
     url = chat_url().rstrip("/")
     if url.endswith("chat/completions"):
         return url[: -len("chat/completions")] + "responses"
@@ -327,6 +333,9 @@ def key_configured() -> bool:
 
 def rewrite_xai_model(model: str) -> str:
     """Map retired aliases to a live chat id. Dead ids hang until a proxy 504."""
+    canopy = (settings.canopy_model_name or "").strip()
+    if canopy:
+        return canopy
     key = (model or "").strip()
     if not key:
         return CURRENT_CHAT_MODEL
@@ -696,7 +705,7 @@ def require_key() -> str:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Chat is off until XAI_API_KEY is set on the server (Railway variables).",
         )
-    if not key.startswith("xai-"):
+    if not key.startswith("xai-") and not (settings.canopy_base_url or "").strip():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="XAI_API_KEY must start with xai- (check Railway variables).",
