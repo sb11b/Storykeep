@@ -295,11 +295,25 @@ class OpsTurnTests(unittest.TestCase):
         self.assertTrue(reply.startswith("Deny"))
 
     def test_cline_pending_git_push_head_with_cursor_branch_approve(self):
-        # Approve git push github HEAD when paste shows cursor/ branch
-        msg = "Cline pending\ncursor/cline-pending-reply-shape\ngit push github HEAD"
+        # Approve git push github HEAD when paste shows "On branch cursor/..."
+        msg = "Cline pending\nOn branch cursor/cline-pending-reply-shape\ngit push github HEAD"
         reply = junior_model.get_cline_pending_reply(msg)
         self.assertIsNotNone(reply)
         self.assertTrue(reply.startswith("Approve"))
+
+    def test_cline_pending_git_push_head_with_cursor_word_not_on_branch_deny(self):
+        # Deny git push github HEAD when "cursor/" appears but not in "On branch cursor/..."
+        msg = "Cline pending\ncursor/cline-pending-reply-shape\ngit push github HEAD"
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_cline_pending_git_push_head_with_main_branch_deny(self):
+        # Deny git push github HEAD when paste shows "On branch main"
+        msg = "Cline pending\nOn branch cursor/test\nOn branch main\ngit push github HEAD"
+        reply = junior_model.get_cline_pending_reply(msg)
+        self.assertIsNotNone(reply)
+        self.assertTrue(reply.startswith("Deny"))
 
     def test_cline_pending_next_command_is_fenced_block(self):
         # Next command is always a fenced code block
@@ -329,6 +343,21 @@ class OpsTurnTests(unittest.TestCase):
     def test_cline_pending_git_add_wildcard_deny(self):
         # Deny git add with wildcard patterns
         reply = junior_model.get_cline_pending_reply("Cline pending\ngit add *.py")
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_cline_pending_git_add_dotdot_deny(self):
+        # Deny git add with .. path traversal
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit add backend/../other.py")
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_cline_pending_git_add_question_mark_deny(self):
+        # Deny git add with ? glob character
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit add backend/app?.py")
+        self.assertTrue(reply.startswith("Deny"))
+
+    def test_cline_pending_git_add_bracket_deny(self):
+        # Deny git add with [ glob character
+        reply = junior_model.get_cline_pending_reply("Cline pending\ngit add backend/app[0-9].py")
         self.assertTrue(reply.startswith("Deny"))
 
 

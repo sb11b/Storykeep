@@ -357,6 +357,9 @@ def _is_safe_git_add(command: str) -> bool:
     for part in parts:
         if not part.startswith("backend/"):
             return False
+        # Deny paths with .. or glob/wildcard characters
+        if ".." in part or "*" in part or "?" in part or "[" in part:
+            return False
     return True
 
 
@@ -397,7 +400,12 @@ def get_cline_pending_reply(message: str) -> str | None:
         return "Deny\nThis command is not on the approved list.\n```git status```"
 
     # Deny git push github HEAD unless the paste shows a cursor/ branch
+    # and does not show a main branch
     if lower_cmd == "git push github head":
+        has_cursor_branch = bool(re.search(r"^On branch cursor\/", text, re.I | re.M))
+        has_main_branch = bool(re.search(r"^On branch main", text, re.I | re.M))
+        if not has_cursor_branch or has_main_branch:
+            return "Deny\nThis command is not on the approved list.\n```git status```"
         if not re.search(r"cursor\/", text, re.I):
             return "Deny\nThis command is not on the approved list.\n```git status```"
 
