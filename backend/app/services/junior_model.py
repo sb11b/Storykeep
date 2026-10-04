@@ -175,6 +175,10 @@ def asks_for_cursor_prompt(message: str) -> bool:
     return asks and cursor
 
 
+def is_prompt_only_turn(message: str) -> bool:
+    return is_cline_prompt_only_turn(message)
+
+
 def is_cline_prompt_only_turn(message: str) -> bool:
     """Steve wants a Cline prompt only — one fenced block, nothing else."""
     return bool(_ASK_CLINE_PROMPT_ONLY_RE.search(message or ""))
