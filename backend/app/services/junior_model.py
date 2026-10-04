@@ -670,7 +670,8 @@ def build_turn_extras(
     cursor_tools: bool = False,
     ops_turn: bool = False,
     delegate_turn: bool = False,
-) -> list[str]:
+,
+    prompt_only_turn: bool = False) -> list[str]:
     """Attach only what this turn needs. Never dump spec docs or full chat bodies."""
     del memory_block  # standing memory lives in standing_system(), not extras
     extras: list[str] = []
