@@ -16,4 +16,9 @@ def test_canopy_chat_url_and_model_when_set():
             assert chat_service.chat_url() == "https://canopy.example.com/v1/chat/completions"
             assert chat_service.rewrite_xai_model("grok-4.6") == "brain-1"
 
+    # canopy_model_name is ignored when canopy_base_url is empty
+    with patch.object(chat_service.settings, "canopy_base_url", ""):
+        with patch.object(chat_service.settings, "canopy_model_name", "brain-1"):
+            assert chat_service.rewrite_xai_model("grok-4.6") == "grok-4.6"
+
     # Unset at end (patcher context managers handle it)
