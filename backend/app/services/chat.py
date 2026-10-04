@@ -373,7 +373,10 @@ def rewrite_xai_model(model: str) -> str:
     key = (model or "").strip()
     if _canopy_enabled():
         if key == "canopy-minimax":
-            return (settings.canopy_minimax_model_name or "").strip() or ""
+            mini = (settings.canopy_minimax_model_name or "").strip()
+            if mini:
+                return mini
+            # fall through to default canopy model
         canopy = (settings.canopy_model_name or "").strip()
         if canopy:
             return canopy
