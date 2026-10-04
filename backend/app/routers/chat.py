@@ -1202,6 +1202,8 @@ def _chat(
     if date_question:
         will_search = False
         schedule_turn = False
+    score_question = junior_model.is_score_question(user_text)
+    news_question = junior_model.is_news_question(user_text)
     will_voices = tts_service.wants_voice_info(user_text)
     owner_ops = user is not None and not is_locked(user)
     railway_enabled = railway_tool.owner_can_use(user)
@@ -1254,6 +1256,8 @@ def _chat(
         search_enabled=search_enabled,
         will_search=will_search,
         will_x=will_x,
+        score_question=score_question,
+        news_question=news_question,
         railway_enabled=railway_enabled,
         railway_tools=railway_tools_on,
         github_enabled=github_enabled,
