@@ -47,8 +47,10 @@ class Settings(BaseSettings):
     xai_chat_models: str = "grok-4.6,grok-4.7,grok-4.3"
     xai_chat_fast_model: str = "grok-4.3"
     xai_chat_max_tokens: int = 125_000
-    canopy_base_url: str = ""
-    canopy_model_name: str = ""
+    canopy_base_url: str = "https://inference.canopywave.io/v1"
+    canopy_model_name: str = "moonshotai/kimi-k2.6"
+    canopy_minimax_model_name: str = "minimax/minimax-m3"
+    canopy_api_key: str = ""
     chat_requests_per_hour: int = 120
     junior_cron_secret: str = ""
     xai_image_url: str = "https://api.x.ai/v1/images/generations"
