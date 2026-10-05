@@ -485,6 +485,7 @@ export function useGrokMessageListen({
         if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
         const url = URL.createObjectURL(data.blob);
         objectUrlRef.current = url;
+        audio.srcObject = null;
         audio.src = url;
         loadedChunkRef.current = index;
         loadedVoiceRef.current = voice;
