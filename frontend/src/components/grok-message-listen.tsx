@@ -345,9 +345,14 @@ export function useGrokMessageListen({
         const onMessage = (event: MessageEvent) => {
           try {
             const msg = JSON.parse(event.data);
-            const delta = msg.delta ?? msg.output_audio?.delta;
-            if (delta) {
-              chunks.push(base64ToUint8Array(delta));
+            if (
+              msg.type === "response.output_audio.delta" ||
+              msg.type === "response.audio.delta"
+            ) {
+              const delta = msg.delta ?? msg.output_audio?.delta;
+              if (delta) {
+                chunks.push(base64ToUint8Array(delta));
+              }
             } else if (msg.type === "response.output_audio.done" || msg.type === "response.audio.done") {
               done = true;
               cleanup();
@@ -362,7 +367,11 @@ export function useGrokMessageListen({
               }
               const floatData = pcm16ToFloat32(combined);
               const sampleRate = 24000;
-              const audioBuffer = new AudioContext().createBuffer(1, floatData.length, sampleRate);
+              const audioBuffer = new AudioBuffer({
+                numberOfChannels: 1,
+                length: floatData.length,
+                sampleRate,
+              });
               const channel = audioBuffer.getChannelData(0);
               for (let i = 0; i < floatData.length; i++) {
                 channel[i] = floatData[i];
@@ -419,6 +428,7 @@ export function useGrokMessageListen({
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
       releaseTtsPlayback(stopRef.current);
       audioRef.current = null;
+      stopRef.current();
     };
   }, [abortInflight, clearWatchdog, stopCueLoop]);
 
@@ -666,8 +676,7 @@ export function useGrokMessageListen({
       sourceNodeRef.current = source;
       source.onended = () => {
         if (generation !== generationRef.current) return;
-        setPhase("idle");
-        playingChangeRef.current?.(false);
+        stopRef.current();
       };
       claimTtsPlayback(stopRef.current);
       clearWatchdog();
@@ -687,14 +696,13 @@ export function useGrokMessageListen({
     // Extra clicks while a request is out would stack requests, not help.
     if (phase === "loading") return;
     if (phase === "paused") {
-      const audio = audioRef.current;
-      if (!audio) return;
-      claimTtsPlayback(stopRef.current);
-      applyPlaybackRate(audio, speedRef.current);
-      void audio.play().then(() => {
-        setPhase("playing");
-        startCueLoop();
-      });
+      if (audioCtxRef.current?.state === "suspended") {
+        claimTtsPlayback(stopRef.current);
+        void audioCtxRef.current.resume().then(() => {
+          setPhase("playing");
+          startCueLoop();
+        });
+      }
       return;
     }
     if (phase === "idle") void beginPlayback();
@@ -702,7 +710,9 @@ export function useGrokMessageListen({
 
   const pause = useCallback(() => {
     if (phase !== "playing") return;
-    audioRef.current?.pause();
+    if (audioCtxRef.current?.state === "running") {
+      void audioCtxRef.current.suspend();
+    }
     stopCueLoop();
     lastCueRef.current = null;
     emitCue(null);
