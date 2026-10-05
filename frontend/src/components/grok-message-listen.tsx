@@ -591,10 +591,6 @@ export function useGrokMessageListen({
         }
       }
       if (pcRef.current === negotiatedPc) {
-        const audio = audioRef.current;
-        if (audio) {
-          audio.srcObject = null;
-        }
         pcRef.current = null;
       }
       if (dcRef.current === negotiatedDc) {
