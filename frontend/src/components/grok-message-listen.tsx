@@ -575,6 +575,35 @@ export function useGrokMessageListen({
     let negotiatedPc: RTCPeerConnection | null = null;
     let negotiatedDc: RTCDataChannel | null = null;
 
+    const cleanupStaleSession = () => {
+      if (negotiatedDc) {
+        try {
+          negotiatedDc.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      if (negotiatedPc) {
+        try {
+          negotiatedPc.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      if (pcRef.current === negotiatedPc) {
+        pcRef.current = null;
+      }
+      if (dcRef.current === negotiatedDc) {
+        dcRef.current = null;
+      }
+      if (pcRef.current === negotiatedPc) {
+        const audio = audioRef.current;
+        if (audio) {
+          audio.srcObject = null;
+        }
+      }
+    };
+
     try {
       const tokenData = await api.realtimeToken();
       if (generation !== generationRef.current) return;
@@ -584,11 +613,9 @@ export function useGrokMessageListen({
 
       const { pc, dc } = await startRealtimeSession(tokenData.value);
       if (generation !== generationRef.current) {
-        try {
-          pc.close();
-        } catch {
-          /* ignore */
-        }
+        negotiatedPc = pc;
+        negotiatedDc = dc;
+        cleanupStaleSession();
         return;
       }
       negotiatedPc = pc;
@@ -643,13 +670,7 @@ export function useGrokMessageListen({
       });
 
       if (generation !== generationRef.current) {
-        if (negotiatedPc) {
-          try {
-            negotiatedPc.close();
-          } catch {
-            /* ignore */
-          }
-        }
+        cleanupStaleSession();
         return;
       }
 
