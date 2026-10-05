@@ -322,27 +322,64 @@ def responses_url() -> str:
     return "https://api.x.ai/v1/responses"
 
 
+def _xai_responses_url() -> str:
+    """Always return the xAI responses URL, ignoring Canopy."""
+    url = (settings.xai_chat_url or "https://api.x.ai/v1/chat/completions").strip()
+    url = url or "https://api.x.ai/v1/chat/completions"
+    if url.endswith("/chat/completions"):
+        return url[: -len("chat/completions")] + "responses"
+    return "https://api.x.ai/v1/responses"
+
+
+def _xai_key() -> str:
+    """Always return the xAI key, ignoring Canopy."""
+    key = (settings.xai_api_key or "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chat is off until XAI_API_KEY is set on the server (Railway variables).",
+        )
+    if not key.startswith("xai-"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="XAI_API_KEY must start with xai- (check Railway variables).",
+        )
+    return key
+
+
+def _canopy_enabled() -> bool:
+    return bool((settings.canopy_base_url or "").strip())
+
+
 def key_format_ok() -> bool:
+    if _canopy_enabled():
+        key = (settings.canopy_api_key or "").strip()
+        return bool(key)
     key = (settings.xai_api_key or "").strip()
     return bool(key) and key.startswith("xai-")
 
 
 def key_configured() -> bool:
+    if _canopy_enabled():
+        return bool((settings.canopy_api_key or "").strip())
     key = (settings.xai_api_key or "").strip()
     if not key:
         return False
-    if (settings.canopy_base_url or "").strip():
-        return True
     return key.startswith("xai-")
 
 
 def rewrite_xai_model(model: str) -> str:
     """Map retired aliases to a live chat id. Dead ids hang until a proxy 504."""
-    if (settings.canopy_base_url or "").strip():
+    key = (model or "").strip()
+    if _canopy_enabled():
+        if key == "canopy-minimax":
+            mini = (settings.canopy_minimax_model_name or "").strip()
+            if mini:
+                return mini
+            # fall through to default canopy model
         canopy = (settings.canopy_model_name or "").strip()
         if canopy:
             return canopy
-    key = (model or "").strip()
     if not key:
         return CURRENT_CHAT_MODEL
     return _DEAD_MODEL_ALIASES.get(key, key)
@@ -707,13 +744,21 @@ def parse_xai_error_body(raw: str, status_code: int) -> str:
 
 
 def require_key() -> str:
+    if _canopy_enabled():
+        key = (settings.canopy_api_key or "").strip()
+        if not key:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Chat is off until CANOPY_API_KEY is set on the server (Railway variables).",
+            )
+        return key
     key = (settings.xai_api_key or "").strip()
     if not key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Chat is off until XAI_API_KEY is set on the server (Railway variables).",
         )
-    if not key.startswith("xai-") and not (settings.canopy_base_url or "").strip():
+    if not key.startswith("xai-"):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="XAI_API_KEY must start with xai- (check Railway variables).",
@@ -1422,7 +1467,10 @@ async def stream_completion(
             content = item.get("content")
             last_user = content if isinstance(content, str) else ""
             break
-    if should_attach_chat_tools(last_user):
+    if _canopy_enabled():
+        # Canopy does not support web_search / code_execution; strip those tools.
+        attach_tools = None
+    elif should_attach_chat_tools(last_user):
         attach_tools = tools
     else:
         from app.services.chat_index import is_chat_index_tool
@@ -1477,6 +1525,7 @@ async def stream_completion(
     started = time.perf_counter()
     first_token_at: float | None = None
     xai_status: int | str | None = None
+    canopy_buf: str = ""  # accumulate across SSE lines when inside Kimi markers
     fb_timeout = (
         float(first_byte_timeout)
         if first_byte_timeout is not None
@@ -1599,6 +1648,44 @@ async def stream_completion(
                             yield ""
                             continue
                     if text:
+                        if _canopy_enabled():
+                            canopy_buf += text
+                            # while there is visible text to yield before any open marker
+                            while True:
+                                # find the earliest unclosed or closed marker start
+                                earliest = None
+                                for pat in ("</think>", "<think>", "<|thinking_begin|>", "<|tool_call_begin|>", "<|tool_calls_section_begin|>"):
+                                    idx = canopy_buf.find(pat)
+                                    if idx != -1:
+                                        if earliest is None or idx < earliest[0]:
+                                            earliest = (idx, pat)
+                                if earliest is None:
+                                    # no markers at all
+                                    if canopy_buf:
+                                        yield canopy_buf
+                                        canopy_buf = ""
+                                    break
+                                pos, pat = earliest
+                                if pos > 0:
+                                    yield canopy_buf[:pos]
+                                    canopy_buf = canopy_buf[pos:]
+                                # now starts with a marker; strip complete or unclosed blocks
+                                end_pats = {
+                                    "</think>": "", "<think>": "</think>", "<|thinking_begin|>": "<|thinking_end|>",
+                                    "<|tool_call_begin|>": "<|tool_call_end|>",
+                                    "<|tool_calls_section_begin|>": "<|tool_calls_section_end|>",
+                                }
+                                end_pat = end_pats[pat]
+                                if end_pat == "":
+                                    canopy_buf = canopy_buf[len(pat):]
+                                    continue
+                                end_pos = canopy_buf.find(end_pat, len(pat))
+                                if end_pos != -1:
+                                    canopy_buf = canopy_buf[end_pos + len(end_pat):]
+                                else:
+                                    # still open; hold everything
+                                    break
+                            continue
                         yield text
                 if first_token_at is None:
                     _xai_ttft_log(
@@ -1831,7 +1918,25 @@ def complete_once(
     text = _content_text(message.get("content") if isinstance(message, dict) else "").strip()
     if not text:
         raise HTTPException(status_code=502, detail="Grok returned an empty reply.")
+    if _canopy_enabled():
+        text = _strip_canopy_tool_markup(text)
     return {"text": text, "model": resolved_model, "reasoning": effort}
+
+
+def _strip_canopy_tool_markup(text: str) -> str:
+    stripped = text or ""
+    stripped = re.sub(r"<think>.*?</think>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"</think>", "", stripped)
+    stripped = re.sub(r"<\|thinking_begin\|>.*?<\|thinking_end\|>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"<\|tool_calls_section_begin\|>.*?<\|tool_calls_section_end\|>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"<\|tool_call_begin\|>.*?<\|tool_call_end\|>", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"<\|tool_calls_section_begin\|>.*", "", stripped, flags=re.DOTALL)
+    stripped = re.sub(r"<\|tool_call_begin\|>.*", "", stripped, flags=re.DOTALL)
+    for opener in ("<think>", "<|thinking_begin|>"):
+        cut = stripped.find(opener)
+        if cut != -1:
+            stripped = stripped[:cut]
+    return stripped.strip()
 
 
 def parse_responses_text(body: dict) -> str:
@@ -1891,7 +1996,7 @@ def complete_with_server_tools(
     kinds = tuple(kind for kind in tool_types if kind and kind != "code_interpreter")
     if not kinds:
         raise HTTPException(status_code=502, detail=fail_detail)
-    key = require_key()
+    key = _xai_key()
     resolved_model = rewrite_xai_model(model or default_full_model())
     effort = clamp_reasoning_effort(resolved_model, reasoning_effort or DEFAULT_REASONING_EFFORT)
     payload: dict[str, object] = {
@@ -1920,7 +2025,7 @@ def complete_with_server_tools(
                     pool=10.0,
                 )
             ) as client:
-                response = client.post(responses_url(), json=payload, headers=_auth_headers(key))
+                response = client.post(_xai_responses_url(), json=payload, headers=_auth_headers(key))
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502, detail=_transport_error_detail(exc)) from exc
         if response.status_code >= 400:
