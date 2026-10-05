@@ -248,27 +248,61 @@ export function useGrokMessageListen({
     }, PREPARE_TIMEOUT_MS);
   }, [clearWatchdog]);
 
-  /** Create an xAI Realtime WebRTC session using the ephemeral client secret. */
+  /** Create an xAI Realtime WebRTC session using the ephemeral client secret.
+   *
+   * The returned peer connection is immediately assigned to pcRef so that
+   * stop() can close it even if this promise is still pending. */
   const startRealtimeSession = useCallback(
     async (token: string): Promise<{ pc: RTCPeerConnection; dc: RTCDataChannel }> => {
       return new Promise((resolve, reject) => {
         const pc = new RTCPeerConnection();
-        const dc = pc.createDataChannel("oai-events");
+        pcRef.current = pc;
+
         pc.addTransceiver("audio", { direction: "recvonly" });
+        pc.ontrack = (event) => {
+          const audio = audioRef.current;
+          if (!audio) return;
+          const stream = new MediaStream();
+          stream.addTrack(event.track);
+          audio.srcObject = stream;
+        };
+
+        const dc = pc.createDataChannel("oai-events");
+        dcRef.current = dc;
+
+        const ICE_TIMEOUT_MS = 5000;
+        let iceTimer: ReturnType<typeof setInterval> | null = null;
+        let iceDeadline: ReturnType<typeof setTimeout> | null = null;
+
+        const cleanupIceTimers = () => {
+          if (iceTimer !== null) {
+            clearInterval(iceTimer);
+            iceTimer = null;
+          }
+          if (iceDeadline !== null) {
+            clearTimeout(iceDeadline);
+            iceDeadline = null;
+          }
+        };
+
         pc.createOffer()
           .then((offer) => pc.setLocalDescription(offer))
           .then(() => {
-            return new Promise<void>((resolveIce) => {
+            return new Promise<void>((resolveIce, rejectIce) => {
               if (pc.iceGatheringState === "complete") {
                 resolveIce();
                 return;
               }
-              const check = setInterval(() => {
+              iceTimer = setInterval(() => {
                 if (pc.iceGatheringState === "complete") {
-                  clearInterval(check);
+                  cleanupIceTimers();
                   resolveIce();
                 }
               }, 100);
+              iceDeadline = setTimeout(() => {
+                cleanupIceTimers();
+                rejectIce(new Error("ICE gathering timed out"));
+              }, ICE_TIMEOUT_MS);
             });
           })
           .then(() => {
@@ -286,8 +320,19 @@ export function useGrokMessageListen({
             return response.text();
           })
           .then((sdp) => pc.setRemoteDescription({ type: "answer", sdp }))
-          .then(() => resolve({ pc, dc }))
-          .catch(reject);
+          .then(() => {
+            cleanupIceTimers();
+            resolve({ pc, dc });
+          })
+          .catch((error) => {
+            cleanupIceTimers();
+            try {
+              pc.close();
+            } catch {
+              /* ignore */
+            }
+            reject(error);
+          });
       });
     },
     [],
@@ -515,68 +560,9 @@ export function useGrokMessageListen({
     const rate = readStoredTtsSpeed();
     setSpeed(rate);
     speedRef.current = rate;
-    setPhase("loading");
-    armWatchdog();
-    try {
-      const tokenData = await api.realtimeToken();
-      if (!tokenData.value) {
-        throw new Error("Realtime token is empty.");
-      }
-      const { pc, dc } = await startRealtimeSession(tokenData.value);
-      pcRef.current = pc;
-      dcRef.current = dc;
-      // Wire remote audio stream into the shared audio element.
-      const audio = audioRef.current;
-      if (audio) {
-        const stream = new MediaStream();
-        pc.ontrack = (event) => {
-          event.streams[0].getTracks().forEach((track) => stream.addTrack(track));
-        };
-        audio.srcObject = stream;
-        claimTtsPlayback(stopRef.current);
-        applyPlaybackRate(audio, rate);
-      }
-      // Wait for data channel to open before sending text.
-      await new Promise<void>((resolve) => {
-        if (dc.readyState === "open") {
-          resolve();
-          return;
-        }
-        dc.addEventListener("open", () => resolve(), { once: true });
-      });
-      // Send text through the data channel.
-      dc.send(
-        JSON.stringify({
-          type: "session.update",
-          session: {
-            voice: voiceRef.current || readStoredTtsVoice() || "alloy",
-            output_audio_format: "pcm16",
-          },
-        }),
-      );
-      dc.send(
-        JSON.stringify({
-          type: "conversation.item.create",
-          item: {
-            type: "message",
-            role: "user",
-            content: [{ type: "input_text", text: script }],
-          },
-        }),
-      );
-      dc.send(JSON.stringify({ type: "response.create" }));
-      clearWatchdog();
-      if (audio) {
-        await audio.play();
-        setPhase("playing");
-        playingChangeRef.current?.(true);
-      }
-    } catch (error) {
-      clearWatchdog();
-      setPhase((current) => (current === "loading" ? "idle" : current));
-      showTtsErrorToast(error);
-    }
-  }, [armWatchdog, clearWatchdog, resetLoaded, resolveScript, startRealtimeSession]);
+    const voice = voiceRef.current || readStoredTtsVoice();
+    await playChunk(0, voice);
+  }, [playChunk, resetLoaded, resolveScript]);
 
   const listen = useCallback(() => {
     if (disabled) return;
