@@ -748,15 +748,46 @@ export function useGrokMessageListen({
     // Extra clicks while a request is out would stack requests, not help.
     if (phase === "loading") return;
     if (phase === "paused") {
-      if (audioCtxRef.current?.state === "suspended") {
+      const ctx = audioCtxRef.current;
+      if (ctx?.state === "suspended") {
         claimTtsPlayback(stopRef.current);
-        void audioCtxRef.current.resume().then(() => {
+        void ctx.resume().then(() => {
           setPhase("playing");
           startCueLoop();
         });
         return;
       }
-      // No suspended realtime context – start a new session.
+      // The context may still be transitioning to "suspended" after pause().
+      // Wait for the state change; if it becomes suspended, resume the existing
+      // session. Otherwise, start a new session only after the old one is gone.
+      if (ctx && ctx.state !== "closed") {
+        const waiter = new Promise<"suspended" | "closed" | "timeout">((resolve) => {
+          const onStateChange = () => {
+            if (ctx.state === "suspended" || ctx.state === "closed") {
+              ctx.removeEventListener("statechange", onStateChange);
+              resolve(ctx.state);
+            }
+          };
+          ctx.addEventListener("statechange", onStateChange);
+          setTimeout(() => {
+            ctx.removeEventListener("statechange", onStateChange);
+            resolve("timeout");
+          }, 500);
+        });
+        void waiter.then((result) => {
+          if (result === "suspended" && audioCtxRef.current?.state === "suspended") {
+            claimTtsPlayback(stopRef.current);
+            void audioCtxRef.current.resume().then(() => {
+              setPhase("playing");
+              startCueLoop();
+            });
+          } else {
+            void beginPlayback();
+          }
+        });
+        return;
+      }
+      // No realtime context to resume – start a new session.
       void beginPlayback();
       return;
     }
