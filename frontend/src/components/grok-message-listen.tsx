@@ -310,7 +310,10 @@ export function useGrokMessageListen({
       let doneReceived = false;
       let lastEndTime = 0;
 
+      const isCurrent = () => audioCtxRef.current === audioCtx;
+
       const tryStop = () => {
+        if (!isCurrent()) return;
         if (doneReceived && audioCtx.currentTime >= lastEndTime - 0.01) {
           stopRef.current();
         }
@@ -342,6 +345,7 @@ export function useGrokMessageListen({
       };
 
       const onMessage = (event: MessageEvent) => {
+        if (!isCurrent()) return;
         try {
           const msg = JSON.parse(event.data);
           if (
@@ -385,11 +389,13 @@ export function useGrokMessageListen({
       };
 
       const onError = () => {
+        if (!isCurrent()) return;
         if (wsRef.current === ws) wsRef.current = null;
         showTtsErrorToast(new Error("WebSocket error"));
       };
 
       const onClose = () => {
+        if (!isCurrent()) return;
         if (wsRef.current === ws) wsRef.current = null;
         doneReceived = true;
         tryStop();
@@ -641,6 +647,7 @@ export function useGrokMessageListen({
 
       // Create AudioContext before opening the WebSocket so deltas can be scheduled immediately.
       const audioCtx = new AudioContext({ sampleRate: 24000 });
+      void audioCtx.resume();
       audioCtxRef.current = audioCtx;
 
       claimTtsPlayback(stopRef.current);
