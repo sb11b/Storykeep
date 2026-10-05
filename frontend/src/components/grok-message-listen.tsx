@@ -82,6 +82,13 @@ export function useGrokMessageListen({
   const [phase, setPhase] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [speed, setSpeed] = useState(readStoredTtsSpeed);
 
+  // Refs for visibility-based pause/resume to avoid re-renders.
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+  const interruptedRef = useRef(false);
+
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current != null) {
       clearTimeout(watchdogRef.current);
@@ -856,6 +863,47 @@ export function useGrokMessageListen({
     emitCue(null);
     setPhase("paused");
   }, [emitCue, phase, stopCueLoop]);
+
+  /** Pause when the page is hidden/blurred; resume on visible/focus. */
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        if (phaseRef.current === "playing") {
+          interruptedRef.current = true;
+          pause();
+        }
+      } else {
+        if (interruptedRef.current) {
+          interruptedRef.current = false;
+          if (phaseRef.current === "paused") {
+            listen();
+          }
+        }
+      }
+    };
+    const onBlur = () => {
+      if (phaseRef.current === "playing") {
+        interruptedRef.current = true;
+        pause();
+      }
+    };
+    const onFocus = () => {
+      if (interruptedRef.current) {
+        interruptedRef.current = false;
+        if (phaseRef.current === "paused") {
+          listen();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [listen, pause]);
 
   const changeSpeed = useCallback((rate: number) => {
     writeStoredTtsSpeed(rate);
