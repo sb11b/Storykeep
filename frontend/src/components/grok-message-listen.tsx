@@ -77,6 +77,7 @@ export function useGrokMessageListen({
     capturedCtx: AudioContext;
     timeoutId: ReturnType<typeof setTimeout>;
     cancelled: boolean;
+    onStateChange: EventListenerOrEventListenerObject;
   } | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [speed, setSpeed] = useState(readStoredTtsSpeed);
@@ -251,6 +252,10 @@ export function useGrokMessageListen({
     if (resumeWaiterRef.current) {
       clearTimeout(resumeWaiterRef.current.timeoutId);
       resumeWaiterRef.current.cancelled = true;
+      const { capturedCtx, onStateChange } = resumeWaiterRef.current;
+      if (onStateChange) {
+        capturedCtx.removeEventListener("statechange", onStateChange);
+      }
       resumeWaiterRef.current = null;
     }
     resetLoaded();
@@ -773,8 +778,23 @@ export function useGrokMessageListen({
       // session. Otherwise, start a new session only after the old one is gone.
       if (ctx && ctx.state !== "closed") {
         const capturedCtx = ctx;
+        // Cancel any existing waiter before creating a new one (keep only one).
+        if (resumeWaiterRef.current) {
+          clearTimeout(resumeWaiterRef.current.timeoutId);
+          resumeWaiterRef.current.cancelled = true;
+          const { capturedCtx: oldCtx, onStateChange: oldListener } = resumeWaiterRef.current;
+          if (oldListener) {
+            oldCtx.removeEventListener("statechange", oldListener);
+          }
+          resumeWaiterRef.current = null;
+        }
         const waiter = new Promise<"suspended" | "closed" | "timeout">((resolve) => {
           const onStateChange = () => {
+            // Race condition 1: check cancellation before doing anything.
+            if (resumeWaiterRef.current?.cancelled) {
+              capturedCtx.removeEventListener("statechange", onStateChange);
+              return;
+            }
             if (capturedCtx.state === "suspended" || capturedCtx.state === "closed") {
               capturedCtx.removeEventListener("statechange", onStateChange);
               resolve(capturedCtx.state);
@@ -782,18 +802,33 @@ export function useGrokMessageListen({
           };
           capturedCtx.addEventListener("statechange", onStateChange);
           const timeoutId = setTimeout(() => {
+            // Race condition 1: check cancellation before doing anything.
+            if (resumeWaiterRef.current?.cancelled) {
+              capturedCtx.removeEventListener("statechange", onStateChange);
+              return;
+            }
             capturedCtx.removeEventListener("statechange", onStateChange);
             resolve("timeout");
           }, 500);
-          resumeWaiterRef.current = { capturedCtx, timeoutId, cancelled: false };
+          resumeWaiterRef.current = { capturedCtx, timeoutId, cancelled: false, onStateChange };
         });
         void waiter.then((result) => {
+          // Race condition 1: check cancellation before doing anything.
+          if (resumeWaiterRef.current?.cancelled) {
+            return;
+          }
           resumeWaiterRef.current = null;
           if (result === "suspended") {
             const currentCtx = audioCtxRef.current;
             if (currentCtx === capturedCtx && currentCtx.state === "suspended") {
               claimTtsPlayback(stopRef.current);
+              const genBefore = generationRef.current;
               void currentCtx.resume().then(() => {
+                // Race condition 3: recheck ownership after resume() settles.
+                if (resumeWaiterRef.current?.cancelled) return;
+                if (audioCtxRef.current !== capturedCtx) return;
+                if (capturedCtx.state === "closed") return;
+                if (generationRef.current !== genBefore) return;
                 setPhase("playing");
                 startCueLoop();
               });
