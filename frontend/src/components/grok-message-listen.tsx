@@ -331,6 +331,8 @@ export function useGrokMessageListen({
             } catch {
               /* ignore */
             }
+            pcRef.current = null;
+            dcRef.current = null;
             reject(error);
           });
       });
@@ -560,9 +562,105 @@ export function useGrokMessageListen({
     const rate = readStoredTtsSpeed();
     setSpeed(rate);
     speedRef.current = rate;
-    const voice = voiceRef.current || readStoredTtsVoice();
-    await playChunk(0, voice);
-  }, [playChunk, resetLoaded, resolveScript]);
+    setPhase("loading");
+    armWatchdog();
+
+    const generation = ++generationRef.current;
+    let negotiatedPc: RTCPeerConnection | null = null;
+    let negotiatedDc: RTCDataChannel | null = null;
+
+    try {
+      const tokenData = await api.realtimeToken();
+      if (generation !== generationRef.current) return;
+      if (!tokenData.value) {
+        throw new Error("Realtime token is empty.");
+      }
+
+      const { pc, dc } = await startRealtimeSession(tokenData.value);
+      if (generation !== generationRef.current) {
+        try {
+          pc.close();
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      negotiatedPc = pc;
+      negotiatedDc = dc;
+
+      // Wire remote audio stream into the shared audio element.
+      const audio = audioRef.current;
+      if (audio) {
+        claimTtsPlayback(stopRef.current);
+        applyPlaybackRate(audio, rate);
+      }
+
+      // Wait for data channel to open before sending text.
+      await new Promise<void>((resolve, rejectDc) => {
+        const onOpen = () => {
+          cleanupDcListeners();
+          resolve();
+        };
+        const onClose = () => {
+          cleanupDcListeners();
+          rejectDc(new Error("Data channel closed before open"));
+        };
+        const onError = () => {
+          cleanupDcListeners();
+          rejectDc(new Error("Data channel error"));
+        };
+        const cleanupDcListeners = () => {
+          dc.removeEventListener("open", onOpen);
+          dc.removeEventListener("close", onClose);
+          dc.removeEventListener("error", onError);
+        };
+        if (dc.readyState === "open") {
+          resolve();
+          return;
+        }
+        dc.addEventListener("open", onOpen, { once: true });
+        dc.addEventListener("close", onClose, { once: true });
+        dc.addEventListener("error", onError, { once: true });
+      });
+
+      if (generation !== generationRef.current) return;
+
+      // Send text through the data channel.
+      dc.send(
+        JSON.stringify({
+          type: "session.update",
+          session: {
+            voice: voiceRef.current || readStoredTtsVoice() || "alloy",
+            output_audio_format: "pcm16",
+            instructions:
+              "Read the supplied text aloud exactly as written. Do not paraphrase. Do not add words.",
+          },
+        }),
+      );
+      dc.send(
+        JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: script }],
+          },
+        }),
+      );
+      dc.send(JSON.stringify({ type: "response.create" }));
+      clearWatchdog();
+      if (audio) {
+        await audio.play();
+        setPhase("playing");
+        playingChangeRef.current?.(true);
+      }
+    } catch (error) {
+      if (generation === generationRef.current) {
+        stopRef.current();
+        showTtsErrorToast(error);
+      }
+    }
+  }, [armWatchdog, clearWatchdog, resetLoaded, resolveScript, startRealtimeSession]);
 
   const listen = useCallback(() => {
     if (disabled) return;
