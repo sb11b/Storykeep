@@ -647,7 +647,12 @@ export function useGrokMessageListen({
 
       // Create AudioContext before opening the WebSocket so deltas can be scheduled immediately.
       const audioCtx = new AudioContext({ sampleRate: 24000 });
-      void audioCtx.resume();
+      await audioCtx.resume();
+      if (audioCtx.state !== "running") {
+        showTtsErrorToast(new Error("AudioContext failed to start."));
+        stopRef.current();
+        return;
+      }
       audioCtxRef.current = audioCtx;
 
       claimTtsPlayback(stopRef.current);
