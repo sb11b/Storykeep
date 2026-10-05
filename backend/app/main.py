@@ -18,11 +18,14 @@ from app.https_redirect import HttpsRedirectMiddleware
 from app.http_limits import PAYLOAD_THREAD_TOO_LARGE, PAYLOAD_TOO_LARGE, LimitChatBodyMiddleware, log_chat_exception
 from app.request_logging import JuniorRequestLogMiddleware
 from app.database import Base, SessionLocal, engine
-from app.models import Feed
+from app.deps import get_current_user
+from app.models import Feed, User
 from app.routers import articles, auth, backups, calendar, chat, feeds, junior_chats, junior_jobs, junior_memory, junior_shared, library, mail, overlay, school, stt, sync, tts
 from app.seed import seed_demo, _seed_owner_ledger
 from app.services import rss
 from app.services.backup import run_scheduled_s3_dumps
+from app.services.demo_lock import reject_locked
+from app.services.voice_realtime import mint_realtime_client_secret
 
 # Without this the root logger stays at WARNING and every per-turn xAI line
 # (ttft_ms, xai_status) is dropped, which is what we need when chat misbehaves.
@@ -493,6 +496,13 @@ app.include_router(stt.router, prefix=API)
 app.include_router(calendar.router, prefix=API)
 app.include_router(mail.router, prefix=API)
 
+
+def _create_realtime_token(user: User = Depends(get_current_user)) -> dict[str, object]:
+    reject_locked(user)
+    return mint_realtime_client_secret()
+
+
+app.add_api_route(f"{API}/tts/realtime", _create_realtime_token, methods=["POST"], tags=["tts"])
 
 # Logged-out browsers opening these paths used to get the SPA shell and hang on
 # "Opening your library…". Send them to sign-in instead. Not Junior chat.

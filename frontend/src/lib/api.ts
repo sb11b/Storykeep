@@ -606,6 +606,8 @@ export const api = {
       { signal: opts?.signal, timeoutMs: opts?.timeoutMs, chars: visibleText.length },
     );
   },
+  realtimeToken: () =>
+    request<{ value: string; expires_at: number }>("/api/v1/tts/realtime", { method: "POST" }),
   chatStatus: () => request<ChatStatus>("/api/v1/chat"),
   messageCryptoStatus: () => request<MessageCryptoStatus>("/api/v1/chat/crypto"),
   enableMessageCrypto: (salt?: string) =>

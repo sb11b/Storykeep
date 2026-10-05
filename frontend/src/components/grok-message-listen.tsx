@@ -68,6 +68,8 @@ export function useGrokMessageListen({
   );
   const inflightRef = useRef<AbortController | null>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const dcRef = useRef<RTCDataChannel | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [speed, setSpeed] = useState(readStoredTtsSpeed);
 
@@ -195,6 +197,22 @@ export function useGrokMessageListen({
       URL.revokeObjectURL(objectUrlRef.current);
       objectUrlRef.current = null;
     }
+    if (dcRef.current) {
+      try {
+        dcRef.current.close();
+      } catch {
+        /* ignore */
+      }
+      dcRef.current = null;
+    }
+    if (pcRef.current) {
+      try {
+        pcRef.current.close();
+      } catch {
+        /* ignore */
+      }
+      pcRef.current = null;
+    }
     resetLoaded();
     setPhase("idle");
     playingChangeRef.current?.(false);
@@ -229,6 +247,51 @@ export function useGrokMessageListen({
       );
     }, PREPARE_TIMEOUT_MS);
   }, [clearWatchdog]);
+
+  /** Create an xAI Realtime WebRTC session using the ephemeral client secret. */
+  const startRealtimeSession = useCallback(
+    async (token: string): Promise<{ pc: RTCPeerConnection; dc: RTCDataChannel }> => {
+      return new Promise((resolve, reject) => {
+        const pc = new RTCPeerConnection();
+        const dc = pc.createDataChannel("oai-events");
+        pc.addTransceiver("audio", { direction: "recvonly" });
+        pc.createOffer()
+          .then((offer) => pc.setLocalDescription(offer))
+          .then(() => {
+            return new Promise<void>((resolveIce) => {
+              if (pc.iceGatheringState === "complete") {
+                resolveIce();
+                return;
+              }
+              const check = setInterval(() => {
+                if (pc.iceGatheringState === "complete") {
+                  clearInterval(check);
+                  resolveIce();
+                }
+              }, 100);
+            });
+          })
+          .then(() => {
+            return fetch("https://api.x.ai/v1/realtime", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/sdp",
+              },
+              body: pc.localDescription?.sdp,
+            });
+          })
+          .then((response) => {
+            if (!response.ok) throw new Error(`xAI Realtime returned ${response.status}`);
+            return response.text();
+          })
+          .then((sdp) => pc.setRemoteDescription({ type: "answer", sdp }))
+          .then(() => resolve({ pc, dc }))
+          .catch(reject);
+      });
+    },
+    [],
+  );
 
   // One audio element for the life of the pane. Rebuilding it when the target
   // message changed used to abort the request that was still in flight.
@@ -452,9 +515,68 @@ export function useGrokMessageListen({
     const rate = readStoredTtsSpeed();
     setSpeed(rate);
     speedRef.current = rate;
-    const voice = voiceRef.current || readStoredTtsVoice();
-    await playChunk(0, voice);
-  }, [playChunk, resetLoaded, resolveScript]);
+    setPhase("loading");
+    armWatchdog();
+    try {
+      const tokenData = await api.realtimeToken();
+      if (!tokenData.value) {
+        throw new Error("Realtime token is empty.");
+      }
+      const { pc, dc } = await startRealtimeSession(tokenData.value);
+      pcRef.current = pc;
+      dcRef.current = dc;
+      // Wire remote audio stream into the shared audio element.
+      const audio = audioRef.current;
+      if (audio) {
+        const stream = new MediaStream();
+        pc.ontrack = (event) => {
+          event.streams[0].getTracks().forEach((track) => stream.addTrack(track));
+        };
+        audio.srcObject = stream;
+        claimTtsPlayback(stopRef.current);
+        applyPlaybackRate(audio, rate);
+      }
+      // Wait for data channel to open before sending text.
+      await new Promise<void>((resolve) => {
+        if (dc.readyState === "open") {
+          resolve();
+          return;
+        }
+        dc.addEventListener("open", () => resolve(), { once: true });
+      });
+      // Send text through the data channel.
+      dc.send(
+        JSON.stringify({
+          type: "session.update",
+          session: {
+            voice: voiceRef.current || readStoredTtsVoice() || "alloy",
+            output_audio_format: "pcm16",
+          },
+        }),
+      );
+      dc.send(
+        JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: script }],
+          },
+        }),
+      );
+      dc.send(JSON.stringify({ type: "response.create" }));
+      clearWatchdog();
+      if (audio) {
+        await audio.play();
+        setPhase("playing");
+        playingChangeRef.current?.(true);
+      }
+    } catch (error) {
+      clearWatchdog();
+      setPhase((current) => (current === "loading" ? "idle" : current));
+      showTtsErrorToast(error);
+    }
+  }, [armWatchdog, clearWatchdog, resetLoaded, resolveScript, startRealtimeSession]);
 
   const listen = useCallback(() => {
     if (disabled) return;
