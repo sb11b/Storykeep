@@ -70,6 +70,9 @@ export function useGrokMessageListen({
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [speed, setSpeed] = useState(readStoredTtsSpeed);
 
@@ -214,6 +217,31 @@ export function useGrokMessageListen({
       }
       pcRef.current = null;
     }
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch {
+        /* ignore */
+      }
+      wsRef.current = null;
+    }
+    if (sourceNodeRef.current) {
+      try {
+        sourceNodeRef.current.stop();
+        sourceNodeRef.current.disconnect();
+      } catch {
+        /* ignore */
+      }
+      sourceNodeRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try {
+        void audioCtxRef.current.close();
+      } catch {
+        /* ignore */
+      }
+      audioCtxRef.current = null;
+    }
     resetLoaded();
     setPhase("idle");
     playingChangeRef.current?.(false);
@@ -249,100 +277,130 @@ export function useGrokMessageListen({
     }, PREPARE_TIMEOUT_MS);
   }, [clearWatchdog]);
 
-  /** Create an xAI Realtime WebRTC session using the ephemeral client secret.
-   *
-   * The returned peer connection is immediately assigned to pcRef so that
-   * stop() can close it even if this promise is still pending. */
+  /** Decode a base64 string into a Uint8Array. */
+  const base64ToUint8Array = useCallback((base64: string): Uint8Array => {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }, []);
+
+  /** Convert interleaved PCM16 data to a Float32Array for Web Audio API. */
+  const pcm16ToFloat32 = useCallback((pcm16: Uint8Array): Float32Array => {
+    const view = new DataView(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength);
+    const float32 = new Float32Array(view.byteLength / 2);
+    for (let i = 0; i < float32.length; i++) {
+      const int16 = view.getInt16(i * 2, true);
+      float32[i] = int16 < 0 ? int16 / 0x8000 : int16 / 0x7fff;
+    }
+    return float32;
+  }, []);
+
+  /** Open an xAI Realtime WebSocket, send the script, and return an AudioBuffer. */
   const startRealtimeSession = useCallback(
-    async (token: string): Promise<{ pc: RTCPeerConnection; dc: RTCDataChannel }> => {
-      return new Promise((resolve, reject) => {
-        const pc = new RTCPeerConnection();
-        pcRef.current = pc;
+    async (token: string, script: string): Promise<AudioBuffer> => {
+      const subprotocol = `xai-client-secret.${token}`;
+      const url = "wss://api.x.ai/v1/realtime?model=grok-voice-latest";
+      const ws = new WebSocket(url, subprotocol);
+      wsRef.current = ws;
 
-        pc.addTransceiver("audio", { direction: "recvonly" });
-        pc.ontrack = (event) => {
-          const audio = audioRef.current;
-          if (!audio) return;
-          const stream = new MediaStream();
-          stream.addTrack(event.track);
-          audio.srcObject = stream;
+      return new Promise<AudioBuffer>((resolve, reject) => {
+        const chunks: Uint8Array[] = [];
+        let done = false;
+
+        const cleanup = () => {
+          ws.removeEventListener("open", onOpen);
+          ws.removeEventListener("message", onMessage);
+          ws.removeEventListener("error", onError);
+          ws.removeEventListener("close", onClose);
         };
 
-        const dc = pc.createDataChannel("oai-events");
-        dcRef.current = dc;
-
-        const ICE_TIMEOUT_MS = 5000;
-        let iceTimer: ReturnType<typeof setInterval> | null = null;
-        let iceDeadline: ReturnType<typeof setTimeout> | null = null;
-
-        const cleanupIceTimers = () => {
-          if (iceTimer !== null) {
-            clearInterval(iceTimer);
-            iceTimer = null;
-          }
-          if (iceDeadline !== null) {
-            clearTimeout(iceDeadline);
-            iceDeadline = null;
-          }
-        };
-
-        pc.createOffer()
-          .then((offer) => pc.setLocalDescription(offer))
-          .then(() => {
-            return new Promise<void>((resolveIce, rejectIce) => {
-              if (pc.iceGatheringState === "complete") {
-                resolveIce();
-                return;
-              }
-              iceTimer = setInterval(() => {
-                if (pc.iceGatheringState === "complete") {
-                  cleanupIceTimers();
-                  resolveIce();
-                }
-              }, 100);
-              iceDeadline = setTimeout(() => {
-                cleanupIceTimers();
-                rejectIce(new Error("ICE gathering timed out"));
-              }, ICE_TIMEOUT_MS);
-            });
-          })
-          .then(() => {
-            return fetch("https://api.x.ai/v1/realtime", {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/sdp",
+        const onOpen = () => {
+          ws.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                voice: voiceRef.current || readStoredTtsVoice() || "alloy",
+                output_audio_format: "pcm16",
+                instructions:
+                  "Read the supplied text aloud exactly as written. Do not paraphrase. Do not add words.",
               },
-              body: pc.localDescription?.sdp,
-            });
-          })
-          .then((response) => {
-            if (!response.ok) throw new Error(`xAI Realtime returned ${response.status}`);
-            return response.text();
-          })
-          .then((sdp) => pc.setRemoteDescription({ type: "answer", sdp }))
-          .then(() => {
-            cleanupIceTimers();
-            resolve({ pc, dc });
-          })
-          .catch((error) => {
-            cleanupIceTimers();
-            try {
-              pc.close();
-            } catch {
-              /* ignore */
+            }),
+          );
+          ws.send(
+            JSON.stringify({
+              type: "conversation.item.create",
+              item: {
+                type: "message",
+                role: "user",
+                content: [{ type: "input_text", text: script }],
+              },
+            }),
+          );
+          ws.send(JSON.stringify({ type: "response.create" }));
+        };
+
+        const onMessage = (event: MessageEvent) => {
+          try {
+            const msg = JSON.parse(event.data);
+            const delta = msg.delta ?? msg.output_audio?.delta;
+            if (delta) {
+              chunks.push(base64ToUint8Array(delta));
+            } else if (msg.type === "response.output_audio.done" || msg.type === "response.audio.done") {
+              done = true;
+              cleanup();
+              if (wsRef.current === ws) wsRef.current = null;
+              ws.close();
+              const total = chunks.reduce((sum, c) => sum + c.length, 0);
+              const combined = new Uint8Array(total);
+              let offset = 0;
+              for (const c of chunks) {
+                combined.set(c, offset);
+                offset += c.length;
+              }
+              const floatData = pcm16ToFloat32(combined);
+              const sampleRate = 24000;
+              const audioBuffer = new AudioContext().createBuffer(1, floatData.length, sampleRate);
+              const channel = audioBuffer.getChannelData(0);
+              for (let i = 0; i < floatData.length; i++) {
+                channel[i] = floatData[i];
+              }
+              resolve(audioBuffer);
+            } else if (msg.type === "error") {
+              done = true;
+              cleanup();
+              if (wsRef.current === ws) wsRef.current = null;
+              ws.close();
+              reject(new Error(msg.error?.message || "Realtime API error"));
             }
-            if (pcRef.current === pc) {
-              pcRef.current = null;
-            }
-            if (dcRef.current === dc) {
-              dcRef.current = null;
-            }
-            reject(error);
-          });
+          } catch {
+            /* ignore non-JSON messages */
+          }
+        };
+
+        const onError = () => {
+          cleanup();
+          if (wsRef.current === ws) wsRef.current = null;
+          reject(new Error("WebSocket error"));
+        };
+
+        const onClose = () => {
+          if (!done) {
+            cleanup();
+            if (wsRef.current === ws) wsRef.current = null;
+            reject(new Error("WebSocket closed before audio complete"));
+          }
+        };
+
+        ws.addEventListener("open", onOpen, { once: true });
+        ws.addEventListener("message", onMessage);
+        ws.addEventListener("error", onError, { once: true });
+        ws.addEventListener("close", onClose, { once: true });
       });
     },
-    [],
+    [base64ToUint8Array, pcm16ToFloat32],
   );
 
   // One audio element for the life of the pane. Rebuilding it when the target
@@ -572,29 +630,17 @@ export function useGrokMessageListen({
     armWatchdog();
 
     const generation = ++generationRef.current;
-    let negotiatedPc: RTCPeerConnection | null = null;
-    let negotiatedDc: RTCDataChannel | null = null;
+    let staleWs: WebSocket | null = null;
 
     const cleanupStaleSession = () => {
-      if (negotiatedDc) {
-        try {
-          negotiatedDc.close();
-        } catch {
-          /* ignore */
-        }
+      if (staleWs == null) return;
+      try {
+        (staleWs as WebSocket).close();
+      } catch {
+        /* ignore */
       }
-      if (negotiatedPc) {
-        try {
-          negotiatedPc.close();
-        } catch {
-          /* ignore */
-        }
-      }
-      if (pcRef.current === negotiatedPc) {
-        pcRef.current = null;
-      }
-      if (dcRef.current === negotiatedDc) {
-        dcRef.current = null;
+      if (wsRef.current === staleWs) {
+        wsRef.current = null;
       }
     };
 
@@ -605,98 +651,29 @@ export function useGrokMessageListen({
         throw new Error("Realtime token is empty.");
       }
 
-      const { pc, dc } = await startRealtimeSession(tokenData.value);
-      if (generation !== generationRef.current) {
-        negotiatedPc = pc;
-        negotiatedDc = dc;
-        cleanupStaleSession();
-        return;
-      }
-      negotiatedPc = pc;
-      negotiatedDc = dc;
-
-      // Wire remote audio stream into the shared audio element.
-      const audio = audioRef.current;
-      if (audio) {
-        claimTtsPlayback(stopRef.current);
-        applyPlaybackRate(audio, rate);
-      }
-
-      // Wait for data channel to open before sending text.
-      await new Promise<void>((resolve, rejectDc) => {
-        const DC_OPEN_TIMEOUT_MS = 5000;
-        let openTimer: ReturnType<typeof setTimeout> | null = null;
-
-        const cleanupDcListeners = () => {
-          dc.removeEventListener("open", onOpen);
-          dc.removeEventListener("close", onClose);
-          dc.removeEventListener("error", onError);
-          if (openTimer !== null) {
-            clearTimeout(openTimer);
-            openTimer = null;
-          }
-        };
-
-        const onOpen = () => {
-          cleanupDcListeners();
-          resolve();
-        };
-        const onClose = () => {
-          cleanupDcListeners();
-          rejectDc(new Error("Data channel closed before open"));
-        };
-        const onError = () => {
-          cleanupDcListeners();
-          rejectDc(new Error("Data channel error"));
-        };
-
-        if (dc.readyState === "open") {
-          resolve();
-          return;
-        }
-        dc.addEventListener("open", onOpen, { once: true });
-        dc.addEventListener("close", onClose, { once: true });
-        dc.addEventListener("error", onError, { once: true });
-        openTimer = setTimeout(() => {
-          cleanupDcListeners();
-          rejectDc(new Error("Data channel open timed out"));
-        }, DC_OPEN_TIMEOUT_MS);
-      });
-
+      const audioBuffer = await startRealtimeSession(tokenData.value, script);
       if (generation !== generationRef.current) {
         cleanupStaleSession();
         return;
       }
 
-      // Send text through the data channel.
-      dc.send(
-        JSON.stringify({
-          type: "session.update",
-          session: {
-            voice: voiceRef.current || readStoredTtsVoice() || "alloy",
-            output_audio_format: "pcm16",
-            instructions:
-              "Read the supplied text aloud exactly as written. Do not paraphrase. Do not add words.",
-          },
-        }),
-      );
-      dc.send(
-        JSON.stringify({
-          type: "conversation.item.create",
-          item: {
-            type: "message",
-            role: "user",
-            content: [{ type: "input_text", text: script }],
-          },
-        }),
-      );
-      dc.send(JSON.stringify({ type: "response.create" }));
+      // Play via Web Audio API so we can feed PCM16 directly.
+      const audioCtx = new AudioContext({ sampleRate: 24000 });
+      audioCtxRef.current = audioCtx;
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+      sourceNodeRef.current = source;
+      source.onended = () => {
+        if (generation !== generationRef.current) return;
+        setPhase("idle");
+        playingChangeRef.current?.(false);
+      };
+      claimTtsPlayback(stopRef.current);
       clearWatchdog();
-      if (audio) {
-        await audio.play();
-        setPhase("playing");
-        playingChangeRef.current?.(true);
-      }
+      source.start();
+      setPhase("playing");
+      playingChangeRef.current?.(true);
     } catch (error) {
       if (generation === generationRef.current) {
         stopRef.current();
