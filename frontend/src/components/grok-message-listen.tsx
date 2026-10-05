@@ -254,6 +254,57 @@ export function useGrokMessageListen({
     stopCueLoop,
   ]);
 
+  /**
+   * Stop only the realtime WebSocket/AudioContext path without touching the HTML
+   * audio element or changing generation/phase. This prevents a late close or
+   * onended from calling the full stop() and killing chunk playback.
+   */
+  const stopRealtimeOnly = useCallback(() => {
+    const ws = wsRef.current;
+    wsRef.current = null;
+    const ctx = audioCtxRef.current;
+    audioCtxRef.current = null;
+    if (ws) {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (sourceNodeRef.current) {
+      try {
+        sourceNodeRef.current.stop();
+        sourceNodeRef.current.disconnect();
+      } catch {
+        /* ignore */
+      }
+      sourceNodeRef.current = null;
+    }
+    if (ctx) {
+      try {
+        void ctx.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (dcRef.current) {
+      try {
+        dcRef.current.close();
+      } catch {
+        /* ignore */
+      }
+      dcRef.current = null;
+    }
+    if (pcRef.current) {
+      try {
+        pcRef.current.close();
+      } catch {
+        /* ignore */
+      }
+      pcRef.current = null;
+    }
+  }, []);
+
   stopRef.current = stop;
 
   /**
@@ -480,6 +531,7 @@ export function useGrokMessageListen({
 
   const playChunk = useCallback(
     async (index: number, voice: string, seekLocal: number | null = null) => {
+      stopRealtimeOnly();
       claimTtsPlayback(stopRef.current);
       const generation = generationRef.current + 1;
       generationRef.current = generation;
@@ -574,6 +626,7 @@ export function useGrokMessageListen({
       prefetchChunk,
       startCueLoop,
       stop,
+      stopRealtimeOnly,
       syncCueFromAudio,
     ],
   );
@@ -582,6 +635,7 @@ export function useGrokMessageListen({
 
   const listenFromWord = useCallback(
     async (wordIndex: number) => {
+      stopRealtimeOnly();
       if (disabled) return;
       const script = resolveScript().trim();
       if (!script) {
@@ -617,7 +671,7 @@ export function useGrokMessageListen({
       const { chunk, local } = chunkForWord(counts, Math.max(0, wordIndex));
       await playChunk(chunk, voice, local);
     },
-    [armWatchdog, clearWatchdog, disabled, loadChunk, playChunk, resetLoaded, resolveScript, stop],
+    [armWatchdog, clearWatchdog, disabled, loadChunk, playChunk, resetLoaded, resolveScript, stop, stopRealtimeOnly],
   );
 
   const beginPlayback = useCallback(async () => {
@@ -637,6 +691,20 @@ export function useGrokMessageListen({
     armWatchdog();
 
     const generation = ++generationRef.current;
+
+    // Stop any HTML audio element playback before opening the realtime socket.
+    const audio = audioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onloadedmetadata = null;
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.srcObject = null;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    }
 
     try {
       const tokenData = await api.realtimeToken();
