@@ -73,6 +73,11 @@ export function useGrokMessageListen({
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const resumeWaiterRef = useRef<{
+    capturedCtx: AudioContext;
+    timeoutId: ReturnType<typeof setTimeout>;
+    cancelled: boolean;
+  } | null>(null);
   const [phase, setPhase] = useState<"idle" | "loading" | "playing" | "paused">("idle");
   const [speed, setSpeed] = useState(readStoredTtsSpeed);
 
@@ -241,6 +246,12 @@ export function useGrokMessageListen({
         /* ignore */
       }
       audioCtxRef.current = null;
+    }
+    // Cancel any pending resume waiter so it cannot call beginPlayback() after stop().
+    if (resumeWaiterRef.current) {
+      clearTimeout(resumeWaiterRef.current.timeoutId);
+      resumeWaiterRef.current.cancelled = true;
+      resumeWaiterRef.current = null;
     }
     resetLoaded();
     setPhase("idle");
@@ -761,29 +772,35 @@ export function useGrokMessageListen({
       // Wait for the state change; if it becomes suspended, resume the existing
       // session. Otherwise, start a new session only after the old one is gone.
       if (ctx && ctx.state !== "closed") {
+        const capturedCtx = ctx;
         const waiter = new Promise<"suspended" | "closed" | "timeout">((resolve) => {
           const onStateChange = () => {
-            if (ctx.state === "suspended" || ctx.state === "closed") {
-              ctx.removeEventListener("statechange", onStateChange);
-              resolve(ctx.state);
+            if (capturedCtx.state === "suspended" || capturedCtx.state === "closed") {
+              capturedCtx.removeEventListener("statechange", onStateChange);
+              resolve(capturedCtx.state);
             }
           };
-          ctx.addEventListener("statechange", onStateChange);
-          setTimeout(() => {
-            ctx.removeEventListener("statechange", onStateChange);
+          capturedCtx.addEventListener("statechange", onStateChange);
+          const timeoutId = setTimeout(() => {
+            capturedCtx.removeEventListener("statechange", onStateChange);
             resolve("timeout");
           }, 500);
+          resumeWaiterRef.current = { capturedCtx, timeoutId, cancelled: false };
         });
         void waiter.then((result) => {
-          if (result === "suspended" && audioCtxRef.current?.state === "suspended") {
-            claimTtsPlayback(stopRef.current);
-            void audioCtxRef.current.resume().then(() => {
-              setPhase("playing");
-              startCueLoop();
-            });
-          } else {
-            void beginPlayback();
+          resumeWaiterRef.current = null;
+          if (result === "suspended") {
+            const currentCtx = audioCtxRef.current;
+            if (currentCtx === capturedCtx && currentCtx.state === "suspended") {
+              claimTtsPlayback(stopRef.current);
+              void currentCtx.resume().then(() => {
+                setPhase("playing");
+                startCueLoop();
+              });
+              return;
+            }
           }
+          void beginPlayback();
         });
         return;
       }
