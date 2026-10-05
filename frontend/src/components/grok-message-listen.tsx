@@ -298,116 +298,107 @@ export function useGrokMessageListen({
     return float32;
   }, []);
 
-  /** Open an xAI Realtime WebSocket, send the script, and return an AudioBuffer. */
+  /** Open an xAI Realtime WebSocket and stream PCM16 deltas to the provided AudioContext. */
   const startRealtimeSession = useCallback(
-    async (token: string, script: string): Promise<AudioBuffer> => {
+    (token: string, script: string, audioCtx: AudioContext) => {
       const subprotocol = `xai-client-secret.${token}`;
       const url = "wss://api.x.ai/v1/realtime?model=grok-voice-latest";
       const ws = new WebSocket(url, subprotocol);
       wsRef.current = ws;
 
-      return new Promise<AudioBuffer>((resolve, reject) => {
-        const chunks: Uint8Array[] = [];
-        let done = false;
+      let nextStartTime = audioCtx.currentTime + 0.05;
+      let doneReceived = false;
+      let lastEndTime = 0;
 
-        const cleanup = () => {
-          ws.removeEventListener("open", onOpen);
-          ws.removeEventListener("message", onMessage);
-          ws.removeEventListener("error", onError);
-          ws.removeEventListener("close", onClose);
-        };
+      const tryStop = () => {
+        if (doneReceived && audioCtx.currentTime >= lastEndTime - 0.01) {
+          stopRef.current();
+        }
+      };
 
-        const onOpen = () => {
-          ws.send(
-            JSON.stringify({
-              type: "session.update",
-              session: {
-                voice: voiceRef.current || readStoredTtsVoice() || "alloy",
-                output_audio_format: "pcm16",
-                instructions:
-                  "Read the supplied text aloud exactly as written. Do not paraphrase. Do not add words.",
-              },
-            }),
-          );
-          ws.send(
-            JSON.stringify({
-              type: "conversation.item.create",
-              item: {
-                type: "message",
-                role: "user",
-                content: [{ type: "input_text", text: script }],
-              },
-            }),
-          );
-          ws.send(JSON.stringify({ type: "response.create" }));
-        };
+      const onOpen = () => {
+        ws.send(
+          JSON.stringify({
+            type: "session.update",
+            session: {
+              voice: voiceRef.current || readStoredTtsVoice() || "alloy",
+              output_audio_format: "pcm16",
+              instructions:
+                "Read the supplied text aloud exactly as written. Do not paraphrase. Do not add words.",
+            },
+          }),
+        );
+        ws.send(
+          JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: script }],
+            },
+          }),
+        );
+        ws.send(JSON.stringify({ type: "response.create" }));
+      };
 
-        const onMessage = (event: MessageEvent) => {
-          try {
-            const msg = JSON.parse(event.data);
-            if (
-              msg.type === "response.output_audio.delta" ||
-              msg.type === "response.audio.delta"
-            ) {
-              const delta = msg.delta ?? msg.output_audio?.delta;
-              if (delta) {
-                chunks.push(base64ToUint8Array(delta));
-              }
-            } else if (msg.type === "response.output_audio.done" || msg.type === "response.audio.done") {
-              done = true;
-              cleanup();
-              if (wsRef.current === ws) wsRef.current = null;
-              ws.close();
-              const total = chunks.reduce((sum, c) => sum + c.length, 0);
-              const combined = new Uint8Array(total);
-              let offset = 0;
-              for (const c of chunks) {
-                combined.set(c, offset);
-                offset += c.length;
-              }
-              const floatData = pcm16ToFloat32(combined);
-              const sampleRate = 24000;
-              const audioBuffer = new AudioBuffer({
-                numberOfChannels: 1,
-                length: floatData.length,
-                sampleRate,
-              });
-              const channel = audioBuffer.getChannelData(0);
-              for (let i = 0; i < floatData.length; i++) {
-                channel[i] = floatData[i];
-              }
-              resolve(audioBuffer);
-            } else if (msg.type === "error") {
-              done = true;
-              cleanup();
-              if (wsRef.current === ws) wsRef.current = null;
-              ws.close();
-              reject(new Error(msg.error?.message || "Realtime API error"));
+      const onMessage = (event: MessageEvent) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (
+            msg.type === "response.output_audio.delta" ||
+            msg.type === "response.audio.delta"
+          ) {
+            const delta = msg.delta ?? msg.output_audio?.delta;
+            if (delta) {
+              const pcmData = base64ToUint8Array(delta);
+              const floatData = pcm16ToFloat32(pcmData);
+              const audioBuffer = audioCtx.createBuffer(1, floatData.length, 24000);
+              audioBuffer.getChannelData(0).set(floatData);
+
+              const source = audioCtx.createBufferSource();
+              source.buffer = audioBuffer;
+              source.connect(audioCtx.destination);
+
+              const startTime = Math.max(audioCtx.currentTime + 0.05, nextStartTime);
+              source.start(startTime);
+              nextStartTime = startTime + audioBuffer.duration;
+              lastEndTime = nextStartTime;
+
+              source.onended = () => {
+                tryStop();
+              };
             }
-          } catch {
-            /* ignore non-JSON messages */
-          }
-        };
-
-        const onError = () => {
-          cleanup();
-          if (wsRef.current === ws) wsRef.current = null;
-          reject(new Error("WebSocket error"));
-        };
-
-        const onClose = () => {
-          if (!done) {
-            cleanup();
+          } else if (
+            msg.type === "response.output_audio.done" ||
+            msg.type === "response.audio.done"
+          ) {
+            doneReceived = true;
+            tryStop();
+          } else if (msg.type === "error") {
             if (wsRef.current === ws) wsRef.current = null;
-            reject(new Error("WebSocket closed before audio complete"));
+            ws.close();
+            showTtsErrorToast(new Error(msg.error?.message || "Realtime API error"));
           }
-        };
+        } catch {
+          /* ignore non-JSON messages */
+        }
+      };
 
-        ws.addEventListener("open", onOpen, { once: true });
-        ws.addEventListener("message", onMessage);
-        ws.addEventListener("error", onError, { once: true });
-        ws.addEventListener("close", onClose, { once: true });
-      });
+      const onError = () => {
+        if (wsRef.current === ws) wsRef.current = null;
+        showTtsErrorToast(new Error("WebSocket error"));
+      };
+
+      const onClose = () => {
+        if (wsRef.current === ws) wsRef.current = null;
+        doneReceived = true;
+        tryStop();
+      };
+
+      ws.addEventListener("open", onOpen, { once: true });
+      ws.addEventListener("message", onMessage);
+      ws.addEventListener("error", onError, { once: true });
+      ws.addEventListener("close", onClose, { once: true });
     },
     [base64ToUint8Array, pcm16ToFloat32],
   );
@@ -640,19 +631,6 @@ export function useGrokMessageListen({
     armWatchdog();
 
     const generation = ++generationRef.current;
-    let staleWs: WebSocket | null = null;
-
-    const cleanupStaleSession = () => {
-      if (staleWs == null) return;
-      try {
-        (staleWs as WebSocket).close();
-      } catch {
-        /* ignore */
-      }
-      if (wsRef.current === staleWs) {
-        wsRef.current = null;
-      }
-    };
 
     try {
       const tokenData = await api.realtimeToken();
@@ -661,26 +639,20 @@ export function useGrokMessageListen({
         throw new Error("Realtime token is empty.");
       }
 
-      const audioBuffer = await startRealtimeSession(tokenData.value, script);
+      // Create AudioContext before opening the WebSocket so deltas can be scheduled immediately.
+      const audioCtx = new AudioContext({ sampleRate: 24000 });
+      audioCtxRef.current = audioCtx;
+
+      claimTtsPlayback(stopRef.current);
+      clearWatchdog();
+
+      // Start streaming audio via WebSocket; deltas are scheduled on the AudioContext as they arrive.
+      startRealtimeSession(tokenData.value, script, audioCtx);
+
       if (generation !== generationRef.current) {
-        cleanupStaleSession();
         return;
       }
 
-      // Play via Web Audio API so we can feed PCM16 directly.
-      const audioCtx = new AudioContext({ sampleRate: 24000 });
-      audioCtxRef.current = audioCtx;
-      const source = audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioCtx.destination);
-      sourceNodeRef.current = source;
-      source.onended = () => {
-        if (generation !== generationRef.current) return;
-        stopRef.current();
-      };
-      claimTtsPlayback(stopRef.current);
-      clearWatchdog();
-      source.start();
       setPhase("playing");
       playingChangeRef.current?.(true);
     } catch (error) {
