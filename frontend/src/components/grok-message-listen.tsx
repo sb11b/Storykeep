@@ -191,6 +191,7 @@ export function useGrokMessageListen({
       audio.onloadedmetadata = null;
       audio.pause();
       audio.removeAttribute("src");
+      audio.srcObject = null;
       audio.load();
     }
     if (objectUrlRef.current) {
@@ -331,8 +332,12 @@ export function useGrokMessageListen({
             } catch {
               /* ignore */
             }
-            pcRef.current = null;
-            dcRef.current = null;
+            if (pcRef.current === pc) {
+              pcRef.current = null;
+            }
+            if (dcRef.current === dc) {
+              dcRef.current = null;
+            }
             reject(error);
           });
       });
@@ -597,6 +602,19 @@ export function useGrokMessageListen({
 
       // Wait for data channel to open before sending text.
       await new Promise<void>((resolve, rejectDc) => {
+        const DC_OPEN_TIMEOUT_MS = 5000;
+        let openTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const cleanupDcListeners = () => {
+          dc.removeEventListener("open", onOpen);
+          dc.removeEventListener("close", onClose);
+          dc.removeEventListener("error", onError);
+          if (openTimer !== null) {
+            clearTimeout(openTimer);
+            openTimer = null;
+          }
+        };
+
         const onOpen = () => {
           cleanupDcListeners();
           resolve();
@@ -609,11 +627,7 @@ export function useGrokMessageListen({
           cleanupDcListeners();
           rejectDc(new Error("Data channel error"));
         };
-        const cleanupDcListeners = () => {
-          dc.removeEventListener("open", onOpen);
-          dc.removeEventListener("close", onClose);
-          dc.removeEventListener("error", onError);
-        };
+
         if (dc.readyState === "open") {
           resolve();
           return;
@@ -621,9 +635,22 @@ export function useGrokMessageListen({
         dc.addEventListener("open", onOpen, { once: true });
         dc.addEventListener("close", onClose, { once: true });
         dc.addEventListener("error", onError, { once: true });
+        openTimer = setTimeout(() => {
+          cleanupDcListeners();
+          rejectDc(new Error("Data channel open timed out"));
+        }, DC_OPEN_TIMEOUT_MS);
       });
 
-      if (generation !== generationRef.current) return;
+      if (generation !== generationRef.current) {
+        if (negotiatedPc) {
+          try {
+            negotiatedPc.close();
+          } catch {
+            /* ignore */
+          }
+        }
+        return;
+      }
 
       // Send text through the data channel.
       dc.send(
