@@ -754,7 +754,10 @@ export function useGrokMessageListen({
           setPhase("playing");
           startCueLoop();
         });
+        return;
       }
+      // No suspended realtime context – start a new session.
+      void beginPlayback();
       return;
     }
     if (phase === "idle") void beginPlayback();
