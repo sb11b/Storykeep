@@ -79,15 +79,16 @@ export function useGrokMessageListen({
     cancelled: boolean;
     onStateChange: EventListenerOrEventListenerObject;
   } | null>(null);
-  const [phase, setPhase] = useState<"idle" | "loading" | "playing" | "paused">("idle");
+  type Phase = "idle" | "loading" | "playing" | "paused";
+  const [phase, setPhase] = useState<Phase>("idle");
   const [speed, setSpeed] = useState(readStoredTtsSpeed);
 
   // Refs for visibility-based pause/resume to avoid re-renders.
-  const phaseRef = useRef(phase);
+  const phaseRef = useRef<Phase>("idle");
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
-  const interruptedRef = useRef(false);
+  const interruptedRef = useRef<boolean>(false);
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current != null) {
