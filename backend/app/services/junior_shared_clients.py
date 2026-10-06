@@ -66,6 +66,7 @@ WINDOWS_PROJECT = "windows-overlay"
 PHONE_DEVICE = "junior-mobile"
 WINDOWS_DEVICE = "windows-overlay"
 GROK_PROJECT = "grok-voice"
+GROK_QUEUE = "grok_queue.json"
 
 API_PREFIX = "/api/v1/junior"
 
@@ -3766,5 +3767,5 @@ def grok_client(
         project_slug=GROK_PROJECT,
         device_label=PHONE_DEVICE,
         queue=queue,
-        queue_path=queue_path,
+        queue_path=queue_path if queue_path is not None else GROK_QUEUE,
     )
