@@ -65,6 +65,7 @@ PHONE_PROJECT = "junior-phone"
 WINDOWS_PROJECT = "windows-overlay"
 PHONE_DEVICE = "junior-mobile"
 WINDOWS_DEVICE = "windows-overlay"
+GROK_PROJECT = "grok-voice"
 
 API_PREFIX = "/api/v1/junior"
 
@@ -3748,6 +3749,22 @@ def windows_client(
         venue=WINDOWS_VENUE,
         project_slug=WINDOWS_PROJECT,
         device_label=WINDOWS_DEVICE,
+        queue=queue,
+        queue_path=queue_path,
+    )
+
+
+def grok_client(
+    http: Any,
+    *,
+    queue: LocalPostQueue | None = None,
+    queue_path: str | Path | None = None,
+) -> SharedMemoryClient:
+    return SharedMemoryClient(
+        http,
+        venue=PHONE_VENUE,
+        project_slug=GROK_PROJECT,
+        device_label=PHONE_DEVICE,
         queue=queue,
         queue_path=queue_path,
     )
