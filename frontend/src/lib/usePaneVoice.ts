@@ -74,6 +74,8 @@ export interface UsePaneVoiceResult {
   requestAutoListenRef: React.RefObject<(messageId: string, markdown: string) => void>;
   ttsPausedRef: React.RefObject<boolean>;
   userStoppedTtsRef: React.RefObject<boolean>;
+  streamAssistantIdRef: React.RefObject<string | null>;
+  writeStoredTtsAutoRead: (on: boolean) => void;
   handleVoiceChange: (next: string) => void;
   handleSpeedChange: (next: number) => void;
   listenLatestReply: () => void;
@@ -125,6 +127,7 @@ export function usePaneVoice({
   // -- refs --
   const ttsPausedRef = useRef(false);
   const userStoppedTtsRef = useRef(false);
+  const streamAssistantIdRef = useRef<string | null>(null);
   const clickedWordRef = useRef<{ messageId: string; index: number } | null>(null);
   const listenTargetRef = useRef<ListenTarget | null>(null);
   const pendingListenRef = useRef(false);
@@ -442,6 +445,8 @@ export function usePaneVoice({
     requestAutoListenRef,
     ttsPausedRef,
     userStoppedTtsRef,
+    streamAssistantIdRef,
+    writeStoredTtsAutoRead,
     handleVoiceChange,
     handleSpeedChange,
     listenLatestReply,

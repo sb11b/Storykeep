@@ -507,9 +507,6 @@ export function GrokPane({
     el.style.height = `${Math.min(Math.max(el.scrollHeight, 48), cap)}px`;
   }, [pane.draft]);
 
-  const voice.listenPhaseRef = useRef<"idle" | "loading" | "playing" | "paused">("idle");
-  const voice.maybeRearmStsRef = useRef<() => void>(() => {});
-
   /** Re-read the live reply so playback never depends on stale state. */
 
 
@@ -1487,7 +1484,7 @@ export function GrokPane({
     [onUpdate],
   );
 
-  const voice.submitVoiceTranscript = useCallback(
+  const submitVoiceTranscript = useCallback(
     (transcript: string) => {
       const message = transcript.trim();
       if (!message) return;
@@ -1502,11 +1499,6 @@ export function GrokPane({
       fillComposerDraft(transcript, true);
     },
     [fillComposerDraft],
-  );
-
-
-
-    [voice.clearSttEmptyHint],
   );
 
 
@@ -2008,23 +2000,6 @@ export function GrokPane({
     if (!next) return;
     patch({ noteDest: next, noteFolderId: null });
     saveLastFiling(next, null);
-  }
-
-  function voice.handleVoiceChange(next: string) {
-    if (voice.listen.isActive) {
-      voice.listenApiRef.current.stop();
-    }
-    voice.setVoiceId(next);
-    voice.writeStoredTtsVoice(next);
-    void api.updatePreferences({ tts_voice_id: next }).catch(() => {
-      /* ignore */
-    });
-  }
-
-  function voice.handleSpeedChange(next: number) {
-    voice.setPlaybackSpeed(next);
-    voice.writeStoredTtsSpeed(next);
-    voice.listen.changeSpeed(next);
   }
 
   const modelOptions = ["auto", ...chatModels.filter((item, index, all) => all.indexOf(item) === index)];
@@ -2775,7 +2750,7 @@ export function GrokPane({
               registerStsRearm={voice.registerStsRearm}
               onPhaseChange={voice.handleMicPhaseChange}
               onStsModeChange={voice.handleStsModeChange}
-              onStsSubmit={voice.submitVoiceTranscript}
+              onStsSubmit={submitVoiceTranscript}
               onSttDraft={applySttDraft}
               onSttEmptyHint={voice.showSttEmptyHint}
             />
